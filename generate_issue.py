@@ -634,19 +634,33 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
         pct = value / total_for_pct * 100 if total_for_pct else 0
         donut_legend += f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="width:12px;height:12px;border-radius:3px;background:{clr};flex-shrink:0;"></div><span style="color:#9ca3af;font-size:0.85rem;">{label}</span><span style="color:#e5e5e5;font-weight:600;margin-left:auto;">{pct:.0f}%</span></div>'
 
-    # Opportunities HTML
+    # Opportunities HTML — editorial numbered cards
     opps_html = ""
-    for opp in data.get("opportunities", []):
+    for i, opp in enumerate(data.get("opportunities", []), 1):
+        # Range bar for each opportunity
+        range_w = max(2, min(98, opp["position"]))
+        drop_pct = abs(opp["from_high"])
+        intensity = min(1, drop_pct / 50)  # more intense red for bigger drops
+
         opps_html += f'''
-        <div class="opp-card">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <span style="font-family: 'Fraunces', Georgia, serif; font-size: 1.4rem; font-weight: 900; color: #fff;">{opp["symbol"]}</span>
-              <span style="color: #6b7280; margin-left: 10px; font-size: 1rem;">${opp["price"]:.0f}</span>
+        <div style="display:flex; gap:20px; align-items:stretch; margin-bottom:20px; background:linear-gradient(135deg, rgba(16,185,129,0.04), rgba(16,185,129,0.01)); border:1px solid rgba(16,185,129,0.15); border-radius:16px; padding:24px; position:relative; overflow:hidden;">
+          <div style="font-family:'Fraunces',serif; font-size:4rem; font-weight:900; color:rgba(16,185,129,0.15); line-height:1; flex-shrink:0; width:50px; text-align:center;">{i}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
+              <div style="font-family:'Fraunces',serif; font-size:1.5rem; font-weight:900; color:#fff;">{opp["symbol"]} <span style="color:#6b7280; font-size:0.9rem; font-weight:400;">${opp["price"]:.0f}</span></div>
+              <div style="font-family:'Fraunces',serif; font-size:1.5rem; font-weight:900; color:#ef4444;">{opp["from_high"]:+.0f}%</div>
             </div>
-            <div style="text-align: right;">
-              <div style="color: #ef4444; font-weight: 800; font-size: 1.1rem;">{opp["from_high"]:+.0f}% from high</div>
-              <div style="color: #6b7280; font-size: 0.9rem; margin-top: 4px;">RSI {opp["rsi"]:.0f} &middot; {opp["position"]:.0f}% of range</div>
+            <div style="margin-top:12px; display:flex; gap:20px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <div style="width:8px; height:8px; border-radius:50%; background:{"#10b981" if opp["rsi"] < 35 else "#eab308"};"></div>
+                <span style="color:#9ca3af; font-size:0.85rem;">RSI {opp["rsi"]:.0f}</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="color:#9ca3af; font-size:0.85rem;">52W Range: {opp["position"]:.0f}%</span>
+              </div>
+            </div>
+            <div style="margin-top:10px; height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+              <div style="height:100%; width:{range_w}%; background:linear-gradient(90deg, #ef4444, #10b981); border-radius:3px;"></div>
             </div>
           </div>
         </div>'''
@@ -1307,12 +1321,19 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
       </div>
     </div>
     <div class="fear-greed-wrapper" style="text-align:center;">
-      <div class="fear-greed-label" style="margin-bottom:8px;">Fear &amp; Greed Index</div>
-      <div style="display:flex;justify-content:center;">
-        {svg_radial_gauge(fg_val, size=220)}
+      <div class="fear-greed-label" style="margin-bottom:16px;">Fear &amp; Greed Index</div>
+      <div style="position:relative; width:200px; height:110px; margin:0 auto;">
+        <div style="position:absolute; width:200px; height:100px; border-radius:100px 100px 0 0; overflow:hidden; background: conic-gradient(from 180deg at 50% 100%, #ef4444 0deg, #f97316 36deg, #eab308 72deg, #22c55e 108deg, #10b981 144deg, #10b981 180deg); opacity:0.7;"></div>
+        <div style="position:absolute; bottom:0; left:50%; width:140px; height:70px; background:#1a1a2e; border-radius:70px 70px 0 0; transform:translateX(-50%);"></div>
+        <div style="position:absolute; bottom:0; left:50%; width:3px; height:75px; background:#fff; border-radius:2px; transform-origin:bottom center; transform:translateX(-50%) rotate({(fg_val / 100 * 180 - 90):.0f}deg); transition:transform 1s;"></div>
+        <div style="position:absolute; bottom:-2px; left:50%; width:10px; height:10px; background:#fff; border-radius:50%; transform:translateX(-50%);"></div>
       </div>
-      <div class="fear-greed-value" style="color: {fg_color}; font-family:'Fraunces',serif; font-size:3rem; font-weight:900; margin-top:-10px;">{fg_val:.0f}</div>
-      <div class="fear-greed-status" style="color: {fg_color}; font-size:1.1rem; font-weight:600;">{fg_label.title()}</div>
+      <div style="display:flex; justify-content:space-between; max-width:200px; margin:4px auto 0; padding:0 4px;">
+        <span style="color:#ef4444; font-size:0.65rem; font-weight:600;">FEAR</span>
+        <span style="color:#10b981; font-size:0.65rem; font-weight:600;">GREED</span>
+      </div>
+      <div style="color: {fg_color}; font-family:'Fraunces',serif; font-size:3.5rem; font-weight:900; margin-top:8px; line-height:1;">{fg_val:.0f}</div>
+      <div style="color: {fg_color}; font-size:1rem; font-weight:600; letter-spacing:2px; text-transform:uppercase;">{fg_label.title()}</div>
     </div>
   </div>
 </div>
@@ -1370,8 +1391,12 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
 <!-- AI ANALYSIS -->
 <div class="analysis-section fade-section">
   <div class="inner">
-    <div class="section-label">Analysis</div>
-    <h2 class="section-title serif">What you need to know</h2>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+      <div class="section-label" style="margin-bottom:0;">Editor's Desk</div>
+      <div style="height:1px; flex:1; background:linear-gradient(90deg, rgba(99,102,241,0.4), transparent);"></div>
+    </div>
+    <h2 class="section-title serif" style="font-size:clamp(1.8rem,5vw,2.8rem);">Today's Analysis</h2>
+    <p style="color:#818cf8; font-size:0.85rem; margin-bottom:28px; letter-spacing:1px;">POWERED BY CLAUDE OPUS &middot; AI-GENERATED INVESTMENT ANALYSIS</p>
     {analysis_html}
   </div>
 </div>
@@ -1379,9 +1404,9 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
 <!-- OPPORTUNITIES -->
 <div class="green-section fade-section">
   <div class="inner">
-    <div class="section-label">Radar</div>
-    <h2 class="section-title serif">Bottoming opportunities</h2>
-    <p style="color: #86efac; margin-bottom: 28px; font-size: 1.05rem; line-height: 1.7;">Stocks showing early recovery signals after significant pullbacks. These are candidates worth investigating, not automatic buys.</p>
+    <div class="section-label" style="letter-spacing:8px;">On The Radar</div>
+    <h2 class="section-title serif" style="font-size:clamp(1.8rem,5vw,2.8rem);">Stocks worth watching</h2>
+    <p style="color: #86efac; margin-bottom:32px; font-size:1.05rem; line-height:1.7; max-width:600px;">Deep pullbacks showing early recovery signals. Not buys yet — but the kind of setup that precedes big moves. Investigate before acting.</p>
     {opps_html}
   </div>
 </div>

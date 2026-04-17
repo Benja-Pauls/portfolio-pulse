@@ -234,7 +234,7 @@
     background: #fff;
     border-radius: 50%;
     border: 4px solid #0a0a0f;
-    left: 50%;
+    left: 62.2%;
     transform: translateX(-50%);
     box-shadow: 0 2px 8px rgba(0,0,0,0.5);
     transition: left 0.5s ease;
@@ -568,7 +568,7 @@
 <div class="hero fade-section">
   <div class="edition">Portfolio Pulse &middot; April 16, 2026</div>
   <h1 class="title serif">Market Report</h1>
-  <p class="date">Thursday &middot; 11:28 PM</p>
+  <p class="date">Thursday &middot; 11:39 PM</p>
   <div class="big-number serif">$322,157</div>
   <div class="change">▲ +$459 (+0.14%) today</div>
   <div class="pnl">All-time P&amp;L: +$33,724 (+15.3%)</div>
@@ -602,22 +602,29 @@
       </div>
       <div class="market-card" style="border-bottom: 3px solid rgba(16,185,129,0.3);">
         <div class="label">Gold</div>
-        <div class="value" style="color: #fff;">$4,815</div>
+        <div class="value" style="color: #fff;">$4,816</div>
         <div class="chg" style="color: #10b981;">+0.6%</div>
       </div>
-      <div class="market-card" style="border-bottom: 3px solid #eab30840;">
+      <div class="market-card" style="border-bottom: 3px solid #10b98140;">
         <div class="label">Fear &amp; Greed</div>
-        <div class="value" style="color: #eab308;">50</div>
-        <div class="chg" style="color: #eab308;">Neutral</div>
+        <div class="value" style="color: #10b981;">62</div>
+        <div class="chg" style="color: #10b981;">Greed</div>
       </div>
     </div>
     <div class="fear-greed-wrapper" style="text-align:center;">
-      <div class="fear-greed-label" style="margin-bottom:8px;">Fear &amp; Greed Index</div>
-      <div style="display:flex;justify-content:center;">
-        <svg width="220" height="150" viewBox="0 0 220 150"><path d="M 20.0,120.0 A 90.0,90.0 0 0 1 37.2,67.1" fill="none" stroke="#ef4444" stroke-width="12" stroke-linecap="round" opacity="0.6"/><path d="M 37.2,67.1 A 90.0,90.0 0 0 1 82.2,34.4" fill="none" stroke="#f97316" stroke-width="12" stroke-linecap="round" opacity="0.6"/><path d="M 82.2,34.4 A 90.0,90.0 0 0 1 137.8,34.4" fill="none" stroke="#eab308" stroke-width="12" stroke-linecap="round" opacity="0.6"/><path d="M 137.8,34.4 A 90.0,90.0 0 0 1 182.8,67.1" fill="none" stroke="#22c55e" stroke-width="12" stroke-linecap="round" opacity="0.6"/><path d="M 182.8,67.1 A 90.0,90.0 0 0 1 200.0,120.0" fill="none" stroke="#10b981" stroke-width="12" stroke-linecap="round" opacity="0.6"/><line x1="110.0" y1="120.0" x2="110.0" y2="45.0" stroke="#fff" stroke-width="3" stroke-linecap="round"/><circle cx="110.0" cy="120.0" r="6" fill="#fff"/><text x="20.0" y="145.0" fill="#6b7280" font-size="10" font-family="Inter,sans-serif">Fear</text><text x="170.0" y="145.0" fill="#6b7280" font-size="10" font-family="Inter,sans-serif">Greed</text></svg>
+      <div class="fear-greed-label" style="margin-bottom:16px;">Fear &amp; Greed Index</div>
+      <div style="position:relative; width:200px; height:110px; margin:0 auto;">
+        <div style="position:absolute; width:200px; height:100px; border-radius:100px 100px 0 0; overflow:hidden; background: conic-gradient(from 180deg at 50% 100%, #ef4444 0deg, #f97316 36deg, #eab308 72deg, #22c55e 108deg, #10b981 144deg, #10b981 180deg); opacity:0.7;"></div>
+        <div style="position:absolute; bottom:0; left:50%; width:140px; height:70px; background:#1a1a2e; border-radius:70px 70px 0 0; transform:translateX(-50%);"></div>
+        <div style="position:absolute; bottom:0; left:50%; width:3px; height:75px; background:#fff; border-radius:2px; transform-origin:bottom center; transform:translateX(-50%) rotate(22deg); transition:transform 1s;"></div>
+        <div style="position:absolute; bottom:-2px; left:50%; width:10px; height:10px; background:#fff; border-radius:50%; transform:translateX(-50%);"></div>
       </div>
-      <div class="fear-greed-value" style="color: #eab308; font-family:'Fraunces',serif; font-size:3rem; font-weight:900; margin-top:-10px;">50</div>
-      <div class="fear-greed-status" style="color: #eab308; font-size:1.1rem; font-weight:600;">Neutral</div>
+      <div style="display:flex; justify-content:space-between; max-width:200px; margin:4px auto 0; padding:0 4px;">
+        <span style="color:#ef4444; font-size:0.65rem; font-weight:600;">FEAR</span>
+        <span style="color:#10b981; font-size:0.65rem; font-weight:600;">GREED</span>
+      </div>
+      <div style="color: #10b981; font-family:'Fraunces',serif; font-size:3.5rem; font-weight:900; margin-top:8px; line-height:1;">62</div>
+      <div style="color: #10b981; font-size:1rem; font-weight:600; letter-spacing:2px; text-transform:uppercase;">Greed</div>
     </div>
   </div>
 </div>
@@ -683,11 +690,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517473728" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4473947136" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,15.0 4.8,20.3 9.7,16.8 14.5,17.5 19.3,17.9 24.1,24.1 29.0,26.3 33.8,22.3 38.6,21.2 43.4,26.6 48.3,27.7 53.1,33.4 57.9,29.3 62.8,30.5 67.6,28.4 72.4,35.3 77.2,41.8 82.1,43.0 86.9,32.3 91.7,29.4 96.6,28.9 101.4,27.2 106.2,26.9 111.0,17.1 115.9,14.8 120.7,15.0 125.5,10.9 130.3,6.1 135.2,2.9 140.0,2.0 140,45" fill="url(#sg_4517473728)"/>
+  <polygon points="0,45 0.0,15.0 4.8,20.3 9.7,16.8 14.5,17.5 19.3,17.9 24.1,24.1 29.0,26.3 33.8,22.3 38.6,21.2 43.4,26.6 48.3,27.7 53.1,33.4 57.9,29.3 62.8,30.5 67.6,28.4 72.4,35.3 77.2,41.8 82.1,43.0 86.9,32.3 91.7,29.4 96.6,28.9 101.4,27.2 106.2,26.9 111.0,17.1 115.9,14.8 120.7,15.0 125.5,10.9 130.3,6.1 135.2,2.9 140.0,2.0 140,45" fill="url(#sg_4473947136)"/>
   <polyline points="0.0,15.0 4.8,20.3 9.7,16.8 14.5,17.5 19.3,17.9 24.1,24.1 29.0,26.3 33.8,22.3 38.6,21.2 43.4,26.6 48.3,27.7 53.1,33.4 57.9,29.3 62.8,30.5 67.6,28.4 72.4,35.3 77.2,41.8 82.1,43.0 86.9,32.3 91.7,29.4 96.6,28.9 101.4,27.2 106.2,26.9 111.0,17.1 115.9,14.8 120.7,15.0 125.5,10.9 130.3,6.1 135.2,2.9 140.0,2.0" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="2.0" r="2.5" fill="#10b981"/>
 </svg></div>
@@ -726,11 +733,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517472512" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4473949376" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,15.2 4.8,19.2 9.7,16.0 14.5,16.2 19.3,16.3 24.1,21.7 29.0,24.9 33.8,21.4 38.6,21.0 43.4,26.4 48.3,27.7 53.1,32.7 57.9,28.8 62.8,30.8 67.6,28.7 72.4,35.6 77.2,42.0 82.1,43.0 86.9,32.2 91.7,29.7 96.6,29.6 101.4,28.0 106.2,27.7 111.0,18.9 115.9,16.0 120.7,15.6 125.5,12.6 130.3,6.8 135.2,2.5 140.0,2.0 140,45" fill="url(#sg_4517472512)"/>
+  <polygon points="0,45 0.0,15.2 4.8,19.2 9.7,16.0 14.5,16.2 19.3,16.3 24.1,21.7 29.0,24.9 33.8,21.4 38.6,21.0 43.4,26.4 48.3,27.7 53.1,32.7 57.9,28.8 62.8,30.8 67.6,28.7 72.4,35.6 77.2,42.0 82.1,43.0 86.9,32.2 91.7,29.7 96.6,29.6 101.4,28.0 106.2,27.7 111.0,18.9 115.9,16.0 120.7,15.6 125.5,12.6 130.3,6.8 135.2,2.5 140.0,2.0 140,45" fill="url(#sg_4473949376)"/>
   <polyline points="0.0,15.2 4.8,19.2 9.7,16.0 14.5,16.2 19.3,16.3 24.1,21.7 29.0,24.9 33.8,21.4 38.6,21.0 43.4,26.4 48.3,27.7 53.1,32.7 57.9,28.8 62.8,30.8 67.6,28.7 72.4,35.6 77.2,42.0 82.1,43.0 86.9,32.2 91.7,29.7 96.6,29.6 101.4,28.0 106.2,27.7 111.0,18.9 115.9,16.0 120.7,15.6 125.5,12.6 130.3,6.8 135.2,2.5 140.0,2.0" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="2.0" r="2.5" fill="#10b981"/>
 </svg></div>
@@ -745,8 +752,8 @@
             <div class="pos-card-range-bar" title="52W Range: $246 — $347">
               <span style="color:#6b7280;font-size:0.65rem;">52W</span>
               <div class="range-track">
-                <div class="range-fill" style="width: 99.06306097050624%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
-                <div style="position:absolute; left:99.06306097050624%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
+                <div class="range-fill" style="width: 99.06303099546611%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
+                <div style="position:absolute; left:99.06303099546611%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
               </div>
             </div>
           </div>
@@ -769,11 +776,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517384128" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474144768" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,8.2 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.9 24.1,7.8 29.0,11.0 33.8,11.3 38.6,11.9 43.4,19.6 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.1 67.6,34.7 72.4,43.0 77.2,35.5 82.1,35.6 86.9,27.3 91.7,23.3 96.6,27.7 101.4,28.7 106.2,26.5 111.0,25.0 115.9,23.2 120.7,23.6 125.5,24.6 130.3,19.4 135.2,21.9 140.0,22.1 140,45" fill="url(#sg_4517384128)"/>
+  <polygon points="0,45 0.0,8.2 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.9 24.1,7.8 29.0,11.0 33.8,11.3 38.6,11.9 43.4,19.6 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.1 67.6,34.7 72.4,43.0 77.2,35.5 82.1,35.6 86.9,27.3 91.7,23.3 96.6,27.7 101.4,28.7 106.2,26.5 111.0,25.0 115.9,23.2 120.7,23.6 125.5,24.6 130.3,19.4 135.2,21.9 140.0,22.1 140,45" fill="url(#sg_4474144768)"/>
   <polyline points="0.0,8.2 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.9 24.1,7.8 29.0,11.0 33.8,11.3 38.6,11.9 43.4,19.6 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.1 67.6,34.7 72.4,43.0 77.2,35.5 82.1,35.6 86.9,27.3 91.7,23.3 96.6,27.7 101.4,28.7 106.2,26.5 111.0,25.0 115.9,23.2 120.7,23.6 125.5,24.6 130.3,19.4 135.2,21.9 140.0,22.1" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="22.1" r="2.5" fill="#ef4444"/>
 </svg></div>
@@ -812,11 +819,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517615104" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474225728" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,8.2 4.8,9.3 9.7,9.0 14.5,11.4 19.3,11.9 24.1,13.9 29.0,18.0 33.8,15.1 38.6,15.5 43.4,20.4 48.3,22.2 53.1,26.8 57.9,26.1 62.8,32.7 67.6,33.8 72.4,37.1 77.2,43.0 82.1,41.6 86.9,34.3 91.7,34.9 96.6,32.2 101.4,32.6 106.2,33.0 111.0,31.7 115.9,32.5 120.7,33.9 125.5,25.2 130.3,19.5 135.2,7.8 140.0,2.0 140,45" fill="url(#sg_4517615104)"/>
+  <polygon points="0,45 0.0,8.2 4.8,9.3 9.7,9.0 14.5,11.4 19.3,11.9 24.1,13.9 29.0,18.0 33.8,15.1 38.6,15.5 43.4,20.4 48.3,22.2 53.1,26.8 57.9,26.1 62.8,32.7 67.6,33.8 72.4,37.1 77.2,43.0 82.1,41.6 86.9,34.3 91.7,34.9 96.6,32.2 101.4,32.6 106.2,33.0 111.0,31.7 115.9,32.5 120.7,33.9 125.5,25.2 130.3,19.5 135.2,7.8 140.0,2.0 140,45" fill="url(#sg_4474225728)"/>
   <polyline points="0.0,8.2 4.8,9.3 9.7,9.0 14.5,11.4 19.3,11.9 24.1,13.9 29.0,18.0 33.8,15.1 38.6,15.5 43.4,20.4 48.3,22.2 53.1,26.8 57.9,26.1 62.8,32.7 67.6,33.8 72.4,37.1 77.2,43.0 82.1,41.6 86.9,34.3 91.7,34.9 96.6,32.2 101.4,32.6 106.2,33.0 111.0,31.7 115.9,32.5 120.7,33.9 125.5,25.2 130.3,19.5 135.2,7.8 140.0,2.0" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="2.0" r="2.5" fill="#10b981"/>
 </svg></div>
@@ -831,8 +838,8 @@
             <div class="pos-card-range-bar" title="52W Range: $356 — $540">
               <span style="color:#6b7280;font-size:0.65rem;">52W</span>
               <div class="range-track">
-                <div class="range-fill" style="width: 34.818261478474156%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
-                <div style="position:absolute; left:34.818261478474156%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
+                <div class="range-fill" style="width: 34.81827232266445%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
+                <div style="position:absolute; left:34.81827232266445%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
               </div>
             </div>
           </div>
@@ -855,11 +862,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517610688" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474150656" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,8.1 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.8 24.1,7.7 29.0,11.0 33.8,11.2 38.6,11.8 43.4,19.5 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.3 67.6,34.7 72.4,43.0 77.2,35.6 82.1,35.6 86.9,27.2 91.7,23.3 96.6,27.8 101.4,28.6 106.2,26.4 111.0,24.9 115.9,23.2 120.7,23.6 125.5,24.5 130.3,19.4 135.2,21.8 140.0,22.0 140,45" fill="url(#sg_4517610688)"/>
+  <polygon points="0,45 0.0,8.1 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.8 24.1,7.7 29.0,11.0 33.8,11.2 38.6,11.8 43.4,19.5 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.3 67.6,34.7 72.4,43.0 77.2,35.6 82.1,35.6 86.9,27.2 91.7,23.3 96.6,27.8 101.4,28.6 106.2,26.4 111.0,24.9 115.9,23.2 120.7,23.6 125.5,24.5 130.3,19.4 135.2,21.8 140.0,22.0 140,45" fill="url(#sg_4474150656)"/>
   <polyline points="0.0,8.1 4.8,4.3 9.7,4.8 14.5,2.0 19.3,2.8 24.1,7.7 29.0,11.0 33.8,11.2 38.6,11.8 43.4,19.5 48.3,29.3 53.1,36.2 57.9,41.2 62.8,41.3 67.6,34.7 72.4,43.0 77.2,35.6 82.1,35.6 86.9,27.2 91.7,23.3 96.6,27.8 101.4,28.6 106.2,26.4 111.0,24.9 115.9,23.2 120.7,23.6 125.5,24.5 130.3,19.4 135.2,21.8 140.0,22.0" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="22.0" r="2.5" fill="#ef4444"/>
 </svg></div>
@@ -898,11 +905,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517613248" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474153088" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,23.5 4.8,26.3 9.7,23.8 14.5,22.6 19.3,23.0 24.1,30.9 29.0,34.7 33.8,27.7 38.6,24.6 43.4,31.4 48.3,31.3 53.1,43.0 57.9,34.8 62.8,36.0 67.6,30.5 72.4,36.7 77.2,39.4 82.1,36.6 86.9,25.3 91.7,20.1 96.6,21.6 101.4,19.4 106.2,19.6 111.0,6.2 115.9,7.2 120.7,6.1 125.5,3.8 130.3,2.0 135.2,3.2 140.0,4.2 140,45" fill="url(#sg_4517613248)"/>
+  <polygon points="0,45 0.0,23.5 4.8,26.3 9.7,23.8 14.5,22.6 19.3,23.0 24.1,30.9 29.0,34.7 33.8,27.7 38.6,24.6 43.4,31.4 48.3,31.3 53.1,43.0 57.9,34.8 62.8,36.0 67.6,30.5 72.4,36.7 77.2,39.4 82.1,36.6 86.9,25.3 91.7,20.1 96.6,21.6 101.4,19.4 106.2,19.6 111.0,6.2 115.9,7.2 120.7,6.1 125.5,3.8 130.3,2.0 135.2,3.2 140.0,4.2 140,45" fill="url(#sg_4474153088)"/>
   <polyline points="0.0,23.5 4.8,26.3 9.7,23.8 14.5,22.6 19.3,23.0 24.1,30.9 29.0,34.7 33.8,27.7 38.6,24.6 43.4,31.4 48.3,31.3 53.1,43.0 57.9,34.8 62.8,36.0 67.6,30.5 72.4,36.7 77.2,39.4 82.1,36.6 86.9,25.3 91.7,20.1 96.6,21.6 101.4,19.4 106.2,19.6 111.0,6.2 115.9,7.2 120.7,6.1 125.5,3.8 130.3,2.0 135.2,3.2 140.0,4.2" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="4.2" r="2.5" fill="#10b981"/>
 </svg></div>
@@ -941,11 +948,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517328896" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474057088" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#ef4444" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,2.0 4.8,7.8 9.7,4.8 14.5,11.7 19.3,5.4 24.1,17.5 29.0,23.8 33.8,13.8 38.6,14.4 43.4,18.9 48.3,16.9 53.1,18.7 57.9,18.6 62.8,24.1 67.6,25.8 72.4,27.0 77.2,41.2 82.1,41.1 86.9,33.8 91.7,30.7 96.6,41.7 101.4,41.3 106.2,40.9 111.0,32.6 115.9,39.2 120.7,43.0 125.5,35.6 130.3,28.2 135.2,27.2 140.0,36.4 140,45" fill="url(#sg_4517328896)"/>
+  <polygon points="0,45 0.0,2.0 4.8,7.8 9.7,4.8 14.5,11.7 19.3,5.4 24.1,17.5 29.0,23.8 33.8,13.8 38.6,14.4 43.4,18.9 48.3,16.9 53.1,18.7 57.9,18.6 62.8,24.1 67.6,25.8 72.4,27.0 77.2,41.2 82.1,41.1 86.9,33.8 91.7,30.7 96.6,41.7 101.4,41.3 106.2,40.9 111.0,32.6 115.9,39.2 120.7,43.0 125.5,35.6 130.3,28.2 135.2,27.2 140.0,36.4 140,45" fill="url(#sg_4474057088)"/>
   <polyline points="0.0,2.0 4.8,7.8 9.7,4.8 14.5,11.7 19.3,5.4 24.1,17.5 29.0,23.8 33.8,13.8 38.6,14.4 43.4,18.9 48.3,16.9 53.1,18.7 57.9,18.6 62.8,24.1 67.6,25.8 72.4,27.0 77.2,41.2 82.1,41.1 86.9,33.8 91.7,30.7 96.6,41.7 101.4,41.3 106.2,40.9 111.0,32.6 115.9,39.2 120.7,43.0 125.5,35.6 130.3,28.2 135.2,27.2 140.0,36.4" fill="none" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="36.4" r="2.5" fill="#ef4444"/>
 </svg></div>
@@ -984,11 +991,11 @@
                 </div>
               </div>
               <div style="opacity:0.9;"><svg width="140" height="45" viewBox="0 0 140 45" style="display:block;">
-  <defs><linearGradient id="sg_4517618688" x1="0" y1="0" x2="0" y2="1">
+  <defs><linearGradient id="sg_4474157120" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="#10b981" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="0,45 0.0,31.0 4.8,35.9 9.7,30.3 14.5,29.5 19.3,27.9 24.1,32.9 29.0,33.6 33.8,29.5 38.6,28.5 43.4,28.8 48.3,25.3 53.1,32.3 57.9,27.2 62.8,26.5 67.6,24.4 72.4,34.3 77.2,36.3 82.1,43.0 86.9,34.8 91.7,29.6 96.6,28.9 101.4,28.2 106.2,26.4 111.0,14.9 115.9,14.4 120.7,11.5 125.5,8.6 130.3,3.9 135.2,4.0 140.0,2.0 140,45" fill="url(#sg_4517618688)"/>
+  <polygon points="0,45 0.0,31.0 4.8,35.9 9.7,30.3 14.5,29.5 19.3,27.9 24.1,32.9 29.0,33.6 33.8,29.5 38.6,28.5 43.4,28.8 48.3,25.3 53.1,32.3 57.9,27.2 62.8,26.5 67.6,24.4 72.4,34.3 77.2,36.3 82.1,43.0 86.9,34.8 91.7,29.6 96.6,28.9 101.4,28.2 106.2,26.4 111.0,14.9 115.9,14.4 120.7,11.5 125.5,8.6 130.3,3.9 135.2,4.0 140.0,2.0 140,45" fill="url(#sg_4474157120)"/>
   <polyline points="0.0,31.0 4.8,35.9 9.7,30.3 14.5,29.5 19.3,27.9 24.1,32.9 29.0,33.6 33.8,29.5 38.6,28.5 43.4,28.8 48.3,25.3 53.1,32.3 57.9,27.2 62.8,26.5 67.6,24.4 72.4,34.3 77.2,36.3 82.1,43.0 86.9,34.8 91.7,29.6 96.6,28.9 101.4,28.2 106.2,26.4 111.0,14.9 115.9,14.4 120.7,11.5 125.5,8.6 130.3,3.9 135.2,4.0 140.0,2.0" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="140.0" cy="2.0" r="2.5" fill="#10b981"/>
 </svg></div>
@@ -1019,49 +1026,53 @@
 <!-- AI ANALYSIS -->
 <div class="analysis-section fade-section">
   <div class="inner">
-    <div class="section-label">Analysis</div>
-    <h2 class="section-title serif">What you need to know</h2>
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+      <div class="section-label" style="margin-bottom:0;">Editor's Desk</div>
+      <div style="height:1px; flex:1; background:linear-gradient(90deg, rgba(99,102,241,0.4), transparent);"></div>
+    </div>
+    <h2 class="section-title serif" style="font-size:clamp(1.8rem,5vw,2.8rem);">Today's Analysis</h2>
+    <p style="color:#818cf8; font-size:0.85rem; margin-bottom:28px; letter-spacing:1px;">POWERED BY CLAUDE OPUS &middot; AI-GENERATED INVESTMENT ANALYSIS</p>
     
         <div class="analysis-card" style="--accent: #6366f1;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #6366f1;">“</div>
-            <h3 class="analysis-card-title">MSFT SURGES INTO EARNINGS — TAKE SOME OFF THE TABLE</h3>
-            <p class="analysis-card-body">Microsoft's +2.2% pop is likely positioning ahead of April 29 earnings, but at RSI 82 you're chasing momentum into a catalyst that could go either way. With only +13.4% gains and short-term tax treatment locked in until Apr 2027, consider trimming 30-40% of the position now to lock in profits before the binary event. If earnings disappoint at this RSI level, the pullback will be sharp and fast.</p>
+            <h3 class="analysis-card-title">MSFT Rips Into Earnings Week — Lock In Some Gains</h3>
+            <p class="analysis-card-body">Microsoft surged 2.2% today, likely on pre-earnings positioning and AI sentiment tailwinds (BAI also up 1.1%). With RSI at 82 and earnings on April 29, this is the classic setup where the stock runs into the report and sells on anything less than a blowout. You're up 13.4% in under two months — trim 30-40% of the position before the print. Short-term tax rate applies regardless, so the question is purely risk management.</p>
           </div>
         </div>
         <div class="analysis-card" style="--accent: #10b981;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #10b981;">“</div>
-            <h3 class="analysis-card-title">ISRG IS YOUR MOST INTERESTING POSITION RIGHT NOW</h3>
-            <p class="analysis-card-body">Flat P&L, RSI 44, and earnings on April 21 — this is the only holding in your portfolio that isn't overextended. The -2.2% today looks like pre-earnings jitters, which is actually healthy setup territory. Hold the full position into earnings; the risk/reward here is asymmetric to the upside given the surgical robotics tailwinds and the stock sitting mid-range while the broader market is overbought.</p>
+            <h3 class="analysis-card-title">ISRG Down 2.2% Pre-Earnings — This Is Your Inflection Point</h3>
+            <p class="analysis-card-body">ISRG is the only position at breakeven and the only one with a sub-50 RSI (44), which means it's actually the healthiest setup technically in your portfolio. Earnings hit April 21 — the stock is being priced for uncertainty, not disaster. Hold the full position into earnings; surgical robotics procedure volumes have been strong, and this name rewards patience through volatility. If it dips post-earnings to the $430s, add with some of that cash.</p>
           </div>
         </div>
         <div class="analysis-card" style="--accent: #f59e0b;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #f59e0b;">“</div>
-            <h3 class="analysis-card-title">RSI 84-85 ACROSS YOUR CORE — THIS IS A WARNING, NOT A CELEBRATION</h3>
-            <p class="analysis-card-body">IVV, OEF, EFV, and BAI are all flashing RSI readings above 82 simultaneously — that's a portfolio-wide overbought condition you rarely see. This doesn't mean sell everything tomorrow, but it means your next move should be reducing, not adding. Start building a rebalancing plan: trim IVV or OEF (you don't need both — they're 98.7% correlated) and move proceeds to cash while you wait for better entries.</p>
+            <h3 class="analysis-card-title">Your Portfolio Is Overbought and Overlapping — Consolidate IVV/OEF Now</h3>
+            <p class="analysis-card-body">Five of your eight positions have RSIs above 80. IVV and OEF are 98.7% correlated — you're paying two expense ratios for the same bet. Sell OEF entirely ($56.5K), harvest the modest $2,852 gain at short-term rates (the tax hit is small), and redeploy that capital where it actually diversifies. This is dead weight in the portfolio and the overlap is costing you optionality.</p>
           </div>
         </div>
         <div class="analysis-card" style="--accent: #ef4444;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #ef4444;">“</div>
-            <h3 class="analysis-card-title">CONSOLIDATE OEF INTO IVV — DO IT NOW</h3>
-            <p class="analysis-card-body">You're paying two expense ratios for effectively the same exposure, and OEF has the weaker return profile (+5.3% vs +29.1%). Sell OEF entirely — yes, you'll pay 30.3% on the $2,852 gain (~$864 tax hit) — but eliminating redundancy frees up ~$56K in capital for deployment into uncorrelated opportunities. The tax cost is trivial relative to the portfolio optimization benefit.</p>
+            <h3 class="analysis-card-title">NKE at $46 Is Interesting but Not Yet Actionable</h3>
+            <p class="analysis-card-body">Nike at -41% from highs with an RSI of 33 is textbook bottoming territory, but "bottoming" doesn't mean "bottomed." The brand is in a genuine turnaround phase under new leadership, and $46 is near multi-year support. Put it on a watchlist with a starter buy trigger at $44 — if it holds that level on volume, deploy $10-15K. Don't catch a falling knife just because it's cheap.</p>
           </div>
         </div>
         <div class="analysis-card" style="--accent: #8b5cf6;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #8b5cf6;">“</div>
-            <h3 class="analysis-card-title">NKE AT $46 IS TEMPTING BUT NOT READY</h3>
-            <p class="analysis-card-body">RSI 33 and -41% from highs puts Nike in deep value territory, but "cheap" isn't the same as "bottoming" — there's no catalyst for a reversal yet, and the consumer discretionary sector faces headwinds from $90 oil squeezing wallets. Start a watchlist position: if RSI drops below 30 and you see insider buying or a guidance reset, deploy $10-15K from your $43K cash pile. Until then, patience pays more than catching knives.</p>
+            <h3 class="analysis-card-title">$43K Cash Is Right-Sized — But Have a Deployment Plan</h3>
+            <p class="analysis-card-body">With VIX at 17.9 and Fear & Greed at 62, markets are complacent but not euphoric. Your 13.5% cash position is appropriate given how overbought your holdings are. If you trim OEF and partial MSFT as recommended, you'd be sitting near $70K cash (22%) — that's dry powder for a pullback that these RSI readings suggest is coming within weeks. Don't chase; the portfolio is already riding this rally hard enough.</p>
           </div>
         </div>
         <div class="analysis-card" style="--accent: #06b6d4;">
           <div class="analysis-card-inner">
             <div class="analysis-quote-mark" style="color: #06b6d4;">“</div>
-            <h3 class="analysis-card-title">HOLD YOUR CASH — DEPLOYMENT WINDOW ISN'T HERE YET</h3>
-            <p class="analysis-card-body">Fear & Greed at 50 with VIX at 17.9 says the market is complacent, not fearful — and you deploy cash into fear, not indifference. Your $43K (13.5% cash position) is a strategic asset right now given every equity position is overbought. The most likely near-term scenario is a 3-5% market pullback from these RSI extremes, which would give you entries 5-8% cheaper across the board. Keep the powder dry through earnings season.</p>
+            <h3 class="analysis-card-title">Gold Positions Quietly Working — Stay Patient Until December</h3>
+            <p class="analysis-card-body">GLD and IAU were flat today (-0.1%) but are up 13-15% and serve as your only real hedge against equity concentration. Do NOT consolidate these until after December 2026 when they flip to long-term capital gains — you'd save roughly 10+ percentage points on the tax rate. With oil at $90 and yields at 4.31%, the macro backdrop still supports gold as an inflation hedge. Hold both, ignore the redundancy for six more months.</p>
           </div>
         </div>
   </div>
@@ -1070,19 +1081,28 @@
 <!-- OPPORTUNITIES -->
 <div class="green-section fade-section">
   <div class="inner">
-    <div class="section-label">Radar</div>
-    <h2 class="section-title serif">Bottoming opportunities</h2>
-    <p style="color: #86efac; margin-bottom: 28px; font-size: 1.05rem; line-height: 1.7;">Stocks showing early recovery signals after significant pullbacks. These are candidates worth investigating, not automatic buys.</p>
+    <div class="section-label" style="letter-spacing:8px;">On The Radar</div>
+    <h2 class="section-title serif" style="font-size:clamp(1.8rem,5vw,2.8rem);">Stocks worth watching</h2>
+    <p style="color: #86efac; margin-bottom:32px; font-size:1.05rem; line-height:1.7; max-width:600px;">Deep pullbacks showing early recovery signals. Not buys yet — but the kind of setup that precedes big moves. Investigate before acting.</p>
     
-        <div class="opp-card">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <span style="font-family: 'Fraunces', Georgia, serif; font-size: 1.4rem; font-weight: 900; color: #fff;">NKE</span>
-              <span style="color: #6b7280; margin-left: 10px; font-size: 1rem;">$46</span>
+        <div style="display:flex; gap:20px; align-items:stretch; margin-bottom:20px; background:linear-gradient(135deg, rgba(16,185,129,0.04), rgba(16,185,129,0.01)); border:1px solid rgba(16,185,129,0.15); border-radius:16px; padding:24px; position:relative; overflow:hidden;">
+          <div style="font-family:'Fraunces',serif; font-size:4rem; font-weight:900; color:rgba(16,185,129,0.15); line-height:1; flex-shrink:0; width:50px; text-align:center;">1</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px;">
+              <div style="font-family:'Fraunces',serif; font-size:1.5rem; font-weight:900; color:#fff;">NKE <span style="color:#6b7280; font-size:0.9rem; font-weight:400;">$46</span></div>
+              <div style="font-family:'Fraunces',serif; font-size:1.5rem; font-weight:900; color:#ef4444;">-41%</div>
             </div>
-            <div style="text-align: right;">
-              <div style="color: #ef4444; font-weight: 800; font-size: 1.1rem;">-41% from high</div>
-              <div style="color: #6b7280; font-size: 0.9rem; margin-top: 4px;">RSI 33 &middot; 9% of range</div>
+            <div style="margin-top:12px; display:flex; gap:20px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <div style="width:8px; height:8px; border-radius:50%; background:#10b981;"></div>
+                <span style="color:#9ca3af; font-size:0.85rem;">RSI 33</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <span style="color:#9ca3af; font-size:0.85rem;">52W Range: 9%</span>
+              </div>
+            </div>
+            <div style="margin-top:10px; height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+              <div style="height:100%; width:8.75155853169216%; background:linear-gradient(90deg, #ef4444, #10b981); border-radius:3px;"></div>
             </div>
           </div>
         </div>
@@ -1092,7 +1112,7 @@
 <!-- FOOTER -->
 <div class="footer fade-section">
   <p style="margin-bottom: 8px; font-size: 1rem;"><strong style="color: #9ca3af;">Portfolio Pulse</strong> &mdash; AI-powered investment analysis</p>
-  <p>Generated by <a href="https://github.com/Benja-Pauls/portfolio-pulse">portfolio-pulse</a> &middot; April 16, 2026 11:28 PM</p>
+  <p>Generated by <a href="https://github.com/Benja-Pauls/portfolio-pulse">portfolio-pulse</a> &middot; April 16, 2026 11:39 PM</p>
   <p style="margin-top: 14px; font-size: 0.8rem; color: #374151;">This is automated analysis, not financial advice. Always do your own research.</p>
   <div class="claude-badge">
     <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
