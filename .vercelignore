@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+issues/
+node_modules/
+*.py
+*.sh
+*.pdf
+CONTRIBUTING.md
+LICENSE
