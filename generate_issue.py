@@ -196,6 +196,97 @@ def parse_opus_cards(text):
     return html
 
 
+def svg_sparkline(prices, width=120, height=40, color="#6366f1"):
+    """Generate an inline SVG sparkline from price data."""
+    if not prices or len(prices) < 2:
+        return ""
+    mn, mx = min(prices), max(prices)
+    rng = mx - mn if mx != mn else 1
+    points = []
+    for i, p in enumerate(prices):
+        x = i / (len(prices) - 1) * width
+        y = height - ((p - mn) / rng * (height - 4)) - 2
+        points.append(f"{x:.1f},{y:.1f}")
+
+    # Gradient fill
+    fill_points = [f"0,{height}"] + points + [f"{width},{height}"]
+    trend_color = "#10b981" if prices[-1] >= prices[0] else "#ef4444"
+
+    return f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="display:block;">
+  <defs><linearGradient id="sg_{id(prices)}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.3"/>
+    <stop offset="100%" stop-color="{trend_color}" stop-opacity="0"/>
+  </linearGradient></defs>
+  <polygon points="{' '.join(fill_points)}" fill="url(#sg_{id(prices)})"/>
+  <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="2.5" fill="{trend_color}"/>
+</svg>'''
+
+
+def svg_donut(slices, size=200):
+    """Generate an SVG donut chart. slices = [(label, value, color), ...]"""
+    total = sum(v for _, v, _ in slices)
+    if total == 0:
+        return ""
+
+    cx, cy, r = size / 2, size / 2, size / 2 - 10
+    inner_r = r * 0.6
+    circumference = 2 * 3.14159 * r
+    arcs = ""
+    legend = ""
+    offset = 0
+
+    for label, value, color in slices:
+        pct = value / total
+        dash = circumference * pct
+        gap = circumference - dash
+
+        arcs += f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{color}" stroke-width="{r - inner_r}" stroke-dasharray="{dash:.1f} {gap:.1f}" stroke-dashoffset="{-offset:.1f}" transform="rotate(-90 {cx} {cy})" opacity="0.85"/>'
+        offset += dash
+
+    # Center text
+    arcs += f'<circle cx="{cx}" cy="{cy}" r="{inner_r}" fill="#0a0a0f"/>'
+
+    return f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">{arcs}</svg>'
+
+
+def svg_radial_gauge(value, size=180):
+    """Generate a radial Fear & Greed gauge."""
+    cx, cy, r = size / 2, size / 2 + 10, size / 2 - 20
+    # Arc from 180° to 0° (half circle)
+    import math
+
+    # Background arc segments
+    segments = [
+        (0, 20, "#ef4444"),    # Extreme Fear
+        (20, 40, "#f97316"),   # Fear
+        (40, 60, "#eab308"),   # Neutral
+        (60, 80, "#22c55e"),   # Greed
+        (80, 100, "#10b981"),  # Extreme Greed
+    ]
+
+    arcs = ""
+    for start, end, color in segments:
+        a1 = math.pi - (start / 100 * math.pi)
+        a2 = math.pi - (end / 100 * math.pi)
+        x1, y1 = cx + r * math.cos(a1), cy - r * math.sin(a1)
+        x2, y2 = cx + r * math.cos(a2), cy - r * math.sin(a2)
+        arcs += f'<path d="M {x1:.1f},{y1:.1f} A {r},{r} 0 0 1 {x2:.1f},{y2:.1f}" fill="none" stroke="{color}" stroke-width="12" stroke-linecap="round" opacity="0.6"/>'
+
+    # Needle
+    angle = math.pi - (value / 100 * math.pi)
+    nx = cx + (r - 15) * math.cos(angle)
+    ny = cy - (r - 15) * math.sin(angle)
+    arcs += f'<line x1="{cx}" y1="{cy}" x2="{nx:.1f}" y2="{ny:.1f}" stroke="#fff" stroke-width="3" stroke-linecap="round"/>'
+    arcs += f'<circle cx="{cx}" cy="{cy}" r="6" fill="#fff"/>'
+
+    # Labels
+    arcs += f'<text x="{cx - r}" y="{cy + 25}" fill="#6b7280" font-size="10" font-family="Inter,sans-serif">Fear</text>'
+    arcs += f'<text x="{cx + r - 30}" y="{cy + 25}" fill="#6b7280" font-size="10" font-family="Inter,sans-serif">Greed</text>'
+
+    return f'<svg width="{size}" height="{size // 2 + 40}" viewBox="0 0 {size} {size // 2 + 40}">{arcs}</svg>'
+
+
 def compute_rsi(prices, window=14):
     delta = prices.diff()
     gain = delta.where(delta > 0, 0).rolling(window=window).mean()
@@ -242,10 +333,23 @@ def gather_data():
 
             rsi = compute_rsi(hist_3m["Close"]).iloc[-1] if not hist_3m.empty else 50
 
+            # Sparkline data (last 30 days for mini chart)
+            spark_prices = hist_3m["Close"].tail(30).tolist() if not hist_3m.empty else []
+
+            # 52-week range position
+            hist_1y = t.history(period="1y")
+            if not hist_1y.empty:
+                high_52w = hist_1y["Close"].max()
+                low_52w = hist_1y["Close"].min()
+                range_pos = (price - low_52w) / (high_52w - low_52w) * 100 if high_52w != low_52w else 50
+            else:
+                high_52w, low_52w, range_pos = price, price, 50
+
             enriched.append({
                 **p, "price": price, "value": value,
                 "day_chg": day_chg, "gain": gain, "gain_pct": gain_pct,
-                "rsi": rsi,
+                "rsi": rsi, "sparkline": spark_prices,
+                "high_52w": high_52w, "low_52w": low_52w, "range_pos": range_pos,
             })
         except Exception:
             continue
@@ -463,7 +567,7 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
     else:
         fg_color = "#22c55e"
 
-    # Build positions HTML — card-based layout
+    # Build positions HTML — card-based layout with sparklines
     pos_cards = ""
     for pos in p["positions"]:
         color = "#10b981" if pos["day_chg"] >= 0 else "#ef4444"
@@ -475,11 +579,8 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
         elif pos["rsi"] < 30:
             rsi_label = '<span class="rsi-badge rsi-oversold">OVERSOLD</span>'
 
-        # Compute 52-week range position for sparkline bar (approximate from RSI/gain)
-        # We'll use a gradient bar: red on left, green on right
-        range_pct = max(0, min(100, pos["rsi"]))  # approximate position
-
-        # Card gradient based on P&L direction
+        range_pct = max(0, min(100, pos.get("range_pos", 50)))
+        sparkline = svg_sparkline(pos.get("sparkline", []), width=140, height=45)
         card_bg = "linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%)" if pos["gain"] >= 0 else "linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(239,68,68,0.02) 100%)"
 
         pos_cards += f'''
@@ -492,10 +593,15 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
             <div class="pos-card-day" style="color: {color};">{"+" if pos["day_chg"] >= 0 else ""}{pos["day_chg"]:.1f}%</div>
           </div>
           <div class="pos-card-body">
-            <div class="pos-card-price">${pos["price"]:.2f}</div>
-            <div class="pos-card-pnl" style="color: {gain_color};">
-              <span class="pos-card-pnl-amount">{"+" if pos["gain"] >= 0 else ""}${pos["gain"]:,.0f}</span>
-              <span class="pos-card-pnl-pct">{"+" if pos["gain_pct"] >= 0 else ""}{pos["gain_pct"]:.1f}%</span>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
+              <div>
+                <div class="pos-card-price">${pos["price"]:.2f}</div>
+                <div class="pos-card-pnl" style="color: {gain_color};">
+                  <span class="pos-card-pnl-amount">{"+" if pos["gain"] >= 0 else ""}${pos["gain"]:,.0f}</span>
+                  <span class="pos-card-pnl-pct">{"+" if pos["gain_pct"] >= 0 else ""}{pos["gain_pct"]:.1f}%</span>
+                </div>
+              </div>
+              <div style="opacity:0.9;">{sparkline}</div>
             </div>
           </div>
           <div class="pos-card-footer">
@@ -504,13 +610,29 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
               <span class="pos-card-rsi-value" style="color: {rsi_color};">{pos["rsi"]:.0f}</span>
               {rsi_label}
             </div>
-            <div class="pos-card-range-bar">
+            <div class="pos-card-range-bar" title="52W Range: ${pos.get('low_52w', 0):.0f} — ${pos.get('high_52w', 0):.0f}">
+              <span style="color:#6b7280;font-size:0.65rem;">52W</span>
               <div class="range-track">
-                <div class="range-fill" style="width: {range_pct}%; background: {gain_color};"></div>
+                <div class="range-fill" style="width: {range_pct}%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
+                <div style="position:absolute; left:{range_pct}%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
               </div>
             </div>
           </div>
         </div>'''
+
+    # Portfolio allocation donut chart
+    donut_colors = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6"]
+    donut_slices = [(pos["symbol"], pos["value"], donut_colors[i % len(donut_colors)]) for i, pos in enumerate(p["positions"])]
+    if p["cash"] > 0:
+        donut_slices.append(("Cash", p["cash"], "#4b5563"))
+    donut_chart = svg_donut(donut_slices, size=220)
+
+    # Donut legend
+    donut_legend = ""
+    total_for_pct = sum(v for _, v, _ in donut_slices)
+    for label, value, clr in donut_slices:
+        pct = value / total_for_pct * 100 if total_for_pct else 0
+        donut_legend += f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="width:12px;height:12px;border-radius:3px;background:{clr};flex-shrink:0;"></div><span style="color:#9ca3af;font-size:0.85rem;">{label}</span><span style="color:#e5e5e5;font-weight:600;margin-left:auto;">{pct:.0f}%</span></div>'
 
     # Opportunities HTML
     opps_html = ""
@@ -1184,22 +1306,13 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
         <div class="chg" style="color: {fg_color};">{fg_label.title()}</div>
       </div>
     </div>
-    <div class="fear-greed-wrapper">
-      <div class="fear-greed-header">
-        <div>
-          <div class="fear-greed-label">Fear &amp; Greed Index</div>
-        </div>
-        <div style="text-align: right;">
-          <div class="fear-greed-value" style="color: {fg_color};">{fg_val:.0f}</div>
-          <div class="fear-greed-status" style="color: {fg_color};">{fg_label.title()}</div>
-        </div>
+    <div class="fear-greed-wrapper" style="text-align:center;">
+      <div class="fear-greed-label" style="margin-bottom:8px;">Fear &amp; Greed Index</div>
+      <div style="display:flex;justify-content:center;">
+        {svg_radial_gauge(fg_val, size=220)}
       </div>
-      <div class="gauge"><div class="gauge-marker"></div></div>
-      <div class="gauge-labels">
-        <span>Extreme Fear</span>
-        <span>Neutral</span>
-        <span>Extreme Greed</span>
-      </div>
+      <div class="fear-greed-value" style="color: {fg_color}; font-family:'Fraunces',serif; font-size:3rem; font-weight:900; margin-top:-10px;">{fg_val:.0f}</div>
+      <div class="fear-greed-status" style="color: {fg_color}; font-size:1.1rem; font-weight:600;">{fg_label.title()}</div>
     </div>
   </div>
 </div>
@@ -1225,6 +1338,18 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
         <div class="macro-stat-number">{macro["t2"]:.2f}%</div>
         <div class="macro-stat-label">2Y Treasury</div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ALLOCATION -->
+<div class="dark-section fade-section">
+  <div class="inner">
+    <div class="section-label">Allocation</div>
+    <h2 class="section-title serif">Where your money is</h2>
+    <div style="display:flex; gap:40px; align-items:center; justify-content:center; flex-wrap:wrap;">
+      <div style="flex-shrink:0;">{donut_chart}</div>
+      <div style="min-width:180px;">{donut_legend}</div>
     </div>
   </div>
 </div>
