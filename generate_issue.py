@@ -97,8 +97,8 @@ def generate_opus_analysis(data):
         sp = m.get("sp500", {})
         vix = m.get("vix", {})
 
-        prompt = f"""You are an expert portfolio analyst writing a concise daily briefing for a self-directed investor.
-Be direct and opinionated — no disclaimers. Give specific, actionable insights.
+        prompt = f"""You are a senior portfolio analyst writing a daily editorial briefing for a magazine called Portfolio Pulse.
+The reader is a self-directed investor with ~$300K. Be direct and opinionated — no disclaimers, no hedging.
 
 TODAY'S DATA:
 
@@ -126,23 +126,44 @@ KEY CONTEXT:
 - IVV and OEF are 98.7% correlated (consolidation candidate)
 - GLD and IAU are identical exposure (consolidate after Dec 2026 for long-term tax rate)
 
-Write 4-6 analysis cards. Each card should have a bold title and 2-3 sentences of analysis.
-Focus on:
-1. What happened today and WHY (not just the numbers)
-2. Which positions need attention and WHAT TO DO about them
-3. Any upcoming catalysts (earnings, macro events) and how to prepare
-4. Whether cash should be deployed or held, and why
-5. Any bottoming opportunities worth investigating
+You will generate TWO sections. Use this exact format:
 
-Format each card as:
-TITLE: [bold title]
-BODY: [2-3 sentences of direct, opinionated analysis]
+===ANALYSIS===
 
-Be concise but substantive. Each card should tell the investor something they can act on."""
+Write 5-7 analysis cards. For EACH card, use this format:
+
+CARD:
+ICON: [one emoji that fits the topic]
+LABEL: [short category like "POSITION ALERT" or "MARKET SIGNAL" or "EARNINGS PREVIEW" or "TAX STRATEGY" or "OPPORTUNITY" or "RISK WARNING"]
+TITLE: [bold editorial headline — be punchy, like a newspaper]
+BODY: [3-5 sentences of substantive analysis. Explain WHAT happened, WHY it matters, and WHAT TO DO. Reference specific prices, percentages, and dates. Compare to historical precedents when relevant.]
+SOURCES: [list 1-3 data sources that informed this analysis, e.g. "RSI technical indicator", "SEC EDGAR Form 4 filings", "FRED yield curve data", "Fear & Greed Index", "52-week range analysis", "Analyst consensus (Finnhub)", "Congressional trading data"]
+
+===OPPORTUNITIES===
+
+For each bottoming opportunity detected, write a brief analysis:
+
+OPP:
+SYMBOL: [ticker]
+HEADLINE: [one-line punchy take]
+ANALYSIS: [2-3 sentences: why it dropped, whether the drop is justified, what would need to happen for a recovery, and whether you'd buy it]
+VERDICT: [BUY / WATCH / AVOID]
+SOURCES: [1-2 data sources]
+
+===CONCLUSION===
+
+Write a 2-3 sentence overall market summary and one clear action item for the day. Start with "BOTTOM LINE:" followed by the summary.
+
+RULES:
+- Be specific: use numbers, dates, percentages
+- Be opinionated: say "sell", "hold", "buy", "avoid" — don't hedge
+- Reference the data sources for credibility
+- Think like a hedge fund analyst, write like a journalist
+- Every card must be ACTIONABLE — the reader should know what to DO after reading it"""
 
         response = client.messages.create(
             model="claude-opus-4-6",
-            max_tokens=1500,
+            max_tokens=4000,
             messages=[{"role": "user", "content": prompt}],
         )
 
@@ -154,46 +175,192 @@ Be concise but substantive. Each card should tell the investor something they ca
         return None
 
 
-def parse_opus_cards(text):
-    """Parse Claude's response into HTML cards."""
+def parse_opus_output(text, data=None):
+    """Parse Claude's rich response into analysis HTML, opportunities HTML, and conclusion HTML."""
     if not text:
-        return ""
+        return "", "", ""
+    if data is None:
+        data = {}
 
-    cards = []
-    current_title = None
-    current_body = []
+    # Split into sections
+    analysis_section = ""
+    opps_section = ""
+    conclusion_section = ""
 
-    for line in text.strip().split("\n"):
-        line = line.strip().lstrip("*").rstrip("*").strip()
-        if not line or line == "---":
+    parts = text.split("===")
+    current_section = None
+    section_contents = {"ANALYSIS": "", "OPPORTUNITIES": "", "CONCLUSION": ""}
+
+    for part in parts:
+        part = part.strip()
+        if part.upper().startswith("ANALYSIS"):
+            current_section = "ANALYSIS"
+            section_contents["ANALYSIS"] = part[len("ANALYSIS"):].strip()
+        elif part.upper().startswith("OPPORTUNITIES"):
+            current_section = "OPPORTUNITIES"
+            section_contents["OPPORTUNITIES"] = part[len("OPPORTUNITIES"):].strip()
+        elif part.upper().startswith("CONCLUSION"):
+            current_section = "CONCLUSION"
+            section_contents["CONCLUSION"] = part[len("CONCLUSION"):].strip()
+        elif current_section:
+            section_contents[current_section] += "\n" + part
+
+    # Parse analysis cards
+    label_colors = {
+        "POSITION ALERT": "#f59e0b",
+        "MARKET SIGNAL": "#6366f1",
+        "EARNINGS PREVIEW": "#8b5cf6",
+        "TAX STRATEGY": "#06b6d4",
+        "OPPORTUNITY": "#10b981",
+        "RISK WARNING": "#ef4444",
+        "MACRO": "#3b82f6",
+        "PORTFOLIO": "#ec4899",
+    }
+
+    cards_text = section_contents.get("ANALYSIS", "")
+    card_blocks = cards_text.split("CARD:")
+    analysis_html = ""
+
+    for block in card_blocks:
+        block = block.strip()
+        if not block:
             continue
-        if line.upper().startswith("TITLE:"):
-            if current_title:
-                cards.append((current_title, " ".join(current_body)))
-            current_title = line[6:].strip().lstrip("*").rstrip("*").strip()
-            current_body = []
-        elif line.upper().startswith("BODY:"):
-            current_body.append(line[5:].strip())
-        elif current_title and not line.upper().startswith("DAILY") and len(line) > 10:
-            current_body.append(line)
 
-    if current_title:
-        cards.append((current_title, " ".join(current_body)))
+        # Parse fields
+        icon = ""
+        label = ""
+        title = ""
+        body = ""
+        sources = ""
 
-    colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
-    html = ""
-    for i, (title, body) in enumerate(cards):
-        color = colors[i % len(colors)]
-        html += f'''
-        <div class="analysis-card" style="--accent: {color};">
-          <div class="analysis-card-inner">
-            <div class="analysis-quote-mark" style="color: {color};">\u201c</div>
-            <h3 class="analysis-card-title">{title}</h3>
-            <p class="analysis-card-body">{body}</p>
+        for line in block.split("\n"):
+            line = line.strip().lstrip("*").rstrip("*").strip()
+            if line.upper().startswith("ICON:"):
+                icon = line[5:].strip()
+            elif line.upper().startswith("LABEL:"):
+                label = line[6:].strip().strip('"').strip("*")
+            elif line.upper().startswith("TITLE:"):
+                title = line[6:].strip().strip('"').strip("*")
+            elif line.upper().startswith("BODY:"):
+                body = line[5:].strip()
+            elif line.upper().startswith("SOURCES:"):
+                sources = line[8:].strip()
+            elif body and not line.upper().startswith(("CARD", "ICON", "LABEL", "TITLE", "SOURCES", "===")):
+                body += " " + line
+
+        if not title:
+            continue
+
+        color = "#6366f1"
+        for key, clr in label_colors.items():
+            if key.lower() in label.lower():
+                color = clr
+                break
+
+        # Format sources as tags
+        sources_html = ""
+        if sources:
+            source_list = [s.strip().strip('"').strip("'") for s in sources.split(",")]
+            sources_html = '<div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:6px;">'
+            for src in source_list[:4]:
+                if src:
+                    sources_html += f'<span style="background:rgba(255,255,255,0.06); color:#6b7280; font-size:0.7rem; padding:3px 8px; border-radius:4px; letter-spacing:0.5px;">{src.strip()}</span>'
+            sources_html += '</div>'
+
+        label_html = f'<div style="display:inline-flex; align-items:center; gap:6px; background:{color}20; color:{color}; font-size:0.7rem; font-weight:700; padding:4px 10px; border-radius:4px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px;">{icon} {label}</div>' if label else ""
+
+        analysis_html += f'''
+        <div style="background:linear-gradient(135deg, rgba(26,26,46,0.8), rgba(26,26,46,0.4)); border-radius:16px; padding:28px; margin-bottom:20px; border-left:4px solid {color}; backdrop-filter:blur(10px);">
+          {label_html}
+          <h3 style="font-family:'Fraunces',serif; font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:12px; line-height:1.3;">{title}</h3>
+          <p style="color:#b0b8c8; line-height:1.8; font-size:1.05rem;">{body}</p>
+          {sources_html}
+        </div>'''
+
+    # Parse opportunities
+    opps_text = section_contents.get("OPPORTUNITIES", "")
+    opp_blocks = opps_text.split("OPP:")
+    opps_html = ""
+
+    verdict_colors = {"BUY": "#10b981", "WATCH": "#f59e0b", "AVOID": "#ef4444"}
+
+    for i, block in enumerate(opp_blocks, 1):
+        block = block.strip()
+        if not block:
+            continue
+
+        symbol = headline = analysis = verdict = sources = ""
+        for line in block.split("\n"):
+            line = line.strip().lstrip("*").rstrip("*").strip()
+            if line.upper().startswith("SYMBOL:"):
+                symbol = line[7:].strip()
+            elif line.upper().startswith("HEADLINE:"):
+                headline = line[9:].strip().strip('"').strip("*")
+            elif line.upper().startswith("ANALYSIS:"):
+                analysis = line[9:].strip()
+            elif line.upper().startswith("VERDICT:"):
+                verdict = line[8:].strip().upper().strip("*")
+            elif line.upper().startswith("SOURCES:"):
+                sources = line[8:].strip()
+            elif analysis and not line.upper().startswith(("OPP", "SYMBOL", "HEADLINE", "VERDICT", "SOURCES", "===")):
+                analysis += " " + line
+
+        if not symbol:
+            continue
+
+        v_color = verdict_colors.get(verdict, "#6b7280")
+        # Find matching opp data for range bar
+        opp_data = next((o for o in data.get("opportunities", []) if o["symbol"] == symbol), None)
+        range_w = opp_data["position"] if opp_data else 20
+        from_high = opp_data["from_high"] if opp_data else -30
+        rsi = opp_data["rsi"] if opp_data else 35
+        price = opp_data["price"] if opp_data else 0
+
+        sources_html = ""
+        if sources:
+            source_list = [s.strip().strip('"') for s in sources.split(",")]
+            sources_html = '<div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px;">'
+            for src in source_list[:3]:
+                if src:
+                    sources_html += f'<span style="background:rgba(255,255,255,0.06); color:#6b7280; font-size:0.65rem; padding:2px 7px; border-radius:3px;">{src.strip()}</span>'
+            sources_html += '</div>'
+
+        opps_html += f'''
+        <div style="display:flex; gap:20px; align-items:stretch; margin-bottom:20px; background:linear-gradient(135deg, rgba(16,185,129,0.04), rgba(16,185,129,0.01)); border:1px solid rgba(16,185,129,0.15); border-radius:16px; padding:24px; position:relative; overflow:hidden;">
+          <div style="font-family:'Fraunces',serif; font-size:3.5rem; font-weight:900; color:rgba(16,185,129,0.15); line-height:1; flex-shrink:0; width:45px; text-align:center;">{i}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+              <div style="font-family:'Fraunces',serif; font-size:1.4rem; font-weight:900; color:#fff;">{symbol} <span style="color:#6b7280; font-size:0.85rem; font-weight:400;">${price:.0f}</span></div>
+              <div style="display:inline-flex; align-items:center; gap:4px; background:{v_color}20; color:{v_color}; font-size:0.7rem; font-weight:800; padding:4px 10px; border-radius:4px; letter-spacing:1px;">{verdict}</div>
+            </div>
+            <div style="font-weight:600; color:#d1d5db; font-size:0.95rem; margin-bottom:8px;">{headline}</div>
+            <p style="color:#9ca3af; line-height:1.7; font-size:0.9rem;">{analysis}</p>
+            <div style="margin-top:12px; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
+              <span style="color:#ef4444; font-weight:700; font-size:0.85rem;">{from_high:+.0f}% from high</span>
+              <span style="color:#6b7280; font-size:0.8rem;">RSI {rsi:.0f}</span>
+              <div style="flex:1; min-width:80px; height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:{range_w}%; background:linear-gradient(90deg, #ef4444, #10b981); border-radius:3px;"></div>
+              </div>
+            </div>
+            {sources_html}
           </div>
         </div>'''
 
-    return html
+    # Parse conclusion
+    conclusion_text = section_contents.get("CONCLUSION", "").strip()
+    if conclusion_text.upper().startswith("BOTTOM LINE:"):
+        conclusion_text = conclusion_text[12:].strip()
+    conclusion_text = conclusion_text.lstrip("*").rstrip("*").strip()
+
+    conclusion_html = ""
+    if conclusion_text:
+        conclusion_html = f'''
+        <div style="background:linear-gradient(135deg, #1e1b4b, #312e81); border-radius:20px; padding:32px; margin-top:32px; text-align:center; border:1px solid rgba(99,102,241,0.3);">
+          <div style="font-size:0.75rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700; margin-bottom:12px;">Bottom Line</div>
+          <p style="font-family:'Fraunces',serif; font-size:1.3rem; font-weight:700; color:#e0e7ff; line-height:1.6; max-width:700px; margin:0 auto;">{conclusion_text}</p>
+        </div>'''
+
+    return analysis_html, opps_html, conclusion_html
 
 
 def svg_sparkline(prices, width=120, height=40, color="#6366f1"):
@@ -437,7 +604,7 @@ def gather_data():
     return data
 
 
-def render_html(data, analysis_text=None, password=None, opus_html=None):
+def render_html(data, analysis_text=None, password=None, opus_html=None, opus_opps_html=None, opus_conclusion_html=None):
     """Render the data into a beautiful editorial magazine HTML."""
     now = datetime.now()
     p = data["portfolio"]
@@ -458,6 +625,8 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
     # Use Opus-generated analysis if available, fallback to auto-generated
     if opus_html:
         analysis_html = opus_html
+        if opus_conclusion_html:
+            analysis_html += opus_conclusion_html
     elif analysis_text:
         paragraphs = analysis_text.strip().split("\n\n")
         analysis_html = ""
@@ -1407,7 +1576,7 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
     <div class="section-label" style="letter-spacing:8px;">On The Radar</div>
     <h2 class="section-title serif" style="font-size:clamp(1.8rem,5vw,2.8rem);">Stocks worth watching</h2>
     <p style="color: #86efac; margin-bottom:32px; font-size:1.05rem; line-height:1.7; max-width:600px;">Deep pullbacks showing early recovery signals. Not buys yet — but the kind of setup that precedes big moves. Investigate before acting.</p>
-    {opps_html}
+    {opus_opps_html if opus_opps_html else opps_html}
   </div>
 </div>
 
@@ -1452,14 +1621,19 @@ def main():
 
     print(f"Generating AI analysis with Claude Opus...")
     opus_text = generate_opus_analysis(data)
-    opus_html = parse_opus_cards(opus_text) if opus_text else None
-    if opus_html:
-        print(f"Opus analysis generated ({len(opus_text)} chars)")
+    opus_html = opus_opps_html = opus_conclusion_html = None
+    if opus_text:
+        opus_html, opus_opps_html, opus_conclusion_html = parse_opus_output(opus_text, data)
+        if opus_html:
+            print(f"Opus analysis generated ({len(opus_text)} chars)")
+        else:
+            print("Opus output couldn't be parsed, using auto-generated")
     else:
         print("Opus unavailable, using auto-generated analysis")
 
     print(f"Rendering HTML...")
-    html = render_html(data, analysis_text=args.analysis, opus_html=opus_html)
+    html = render_html(data, analysis_text=args.analysis, opus_html=opus_html,
+                       opus_opps_html=opus_opps_html, opus_conclusion_html=opus_conclusion_html)
 
     output = issues_dir / f"{issue_date}.html"
     output.write_text(html)
