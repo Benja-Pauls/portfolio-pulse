@@ -152,14 +152,32 @@ SOURCES: [1-2 data sources]
 
 ===CONCLUSION===
 
-Write a 2-3 sentence overall market summary and one clear action item for the day. Start with "BOTTOM LINE:" followed by the summary.
+Write 2-3 sentences summarizing today's overall market posture and portfolio health. Start with "SUMMARY:" followed by the text.
+
+===ACTIONS===
+
+For EVERY position in the portfolio, write one line with a specific recommendation.
+Then add any NEW positions worth opening based on the opportunities detected.
+
+Use this exact format for each:
+
+ACTION:
+SYMBOL: [ticker]
+NAME: [company/fund name]
+TYPE: [HOLD / BUY / SELL / TRIM / ADD / WATCH]
+DETAIL: [specific instruction, e.g. "Hold through Apr 29 earnings — consensus expects beat" or "Trim 20 shares to lock $2,700 gain at overbought RSI 76" or "New position: buy 30 shares at $45 limit — 42% below high with bottoming signals"]
+URGENCY: [NOW / SOON / WAIT / NO ACTION]
+
+Include ALL current holdings (IVV, OEF, GLD, IAU, EFV, BAI, ISRG, MSFT) plus Cash.
+Then add 1-3 new opportunities from the bottoming signals if any merit action.
 
 RULES:
-- Be specific: use numbers, dates, percentages
+- Be specific: use numbers, dates, percentages, share counts, dollar amounts
 - Be opinionated: say "sell", "hold", "buy", "avoid" — don't hedge
 - Reference the data sources for credibility
 - Think like a hedge fund analyst, write like a journalist
-- Every card must be ACTIONABLE — the reader should know what to DO after reading it"""
+- Every card must be ACTIONABLE — the reader should know what to DO after reading it
+- For the ACTIONS table, give a specific recommendation for EVERY holding, not just the interesting ones"""
 
         response = client.messages.create(
             model="claude-opus-4-6",
@@ -189,7 +207,7 @@ def parse_opus_output(text, data=None):
 
     parts = text.split("===")
     current_section = None
-    section_contents = {"ANALYSIS": "", "OPPORTUNITIES": "", "CONCLUSION": ""}
+    section_contents = {"ANALYSIS": "", "OPPORTUNITIES": "", "CONCLUSION": "", "ACTIONS": ""}
 
     for part in parts:
         part = part.strip()
@@ -202,6 +220,9 @@ def parse_opus_output(text, data=None):
         elif part.upper().startswith("CONCLUSION"):
             current_section = "CONCLUSION"
             section_contents["CONCLUSION"] = part[len("CONCLUSION"):].strip()
+        elif part.upper().startswith("ACTIONS"):
+            current_section = "ACTIONS"
+            section_contents["ACTIONS"] = part[len("ACTIONS"):].strip()
         elif current_section:
             section_contents[current_section] += "\n" + part
 
@@ -346,47 +367,119 @@ def parse_opus_output(text, data=None):
           </div>
         </div>'''
 
-    # Parse conclusion
+    # Parse conclusion/summary
     conclusion_text = section_contents.get("CONCLUSION", "").strip()
-    if conclusion_text.upper().startswith("BOTTOM LINE:"):
+    if conclusion_text.upper().startswith("SUMMARY:"):
+        conclusion_text = conclusion_text[8:].strip()
+    elif conclusion_text.upper().startswith("BOTTOM LINE:"):
         conclusion_text = conclusion_text[12:].strip()
     conclusion_text = conclusion_text.lstrip("*").rstrip("*").strip()
 
+    # Parse actions
+    actions_text = section_contents.get("ACTIONS", "")
+    action_blocks = actions_text.split("ACTION:")
+    actions_html = ""
+
+    type_config = {
+        "HOLD": ("#6b7280", "—"),
+        "BUY": ("#10b981", "▲"),
+        "ADD": ("#10b981", "+"),
+        "SELL": ("#ef4444", "▼"),
+        "TRIM": ("#f59e0b", "↓"),
+        "WATCH": ("#8b5cf6", "👁"),
+        "NO ACTION": ("#6b7280", "—"),
+    }
+
+    urgency_config = {
+        "NOW": ("#ef4444", "●"),
+        "SOON": ("#f59e0b", "●"),
+        "WAIT": ("#6b7280", "○"),
+        "NO ACTION": ("#4b5563", "○"),
+    }
+
+    for block in action_blocks:
+        block = block.strip()
+        if not block:
+            continue
+
+        symbol = name = action_type = detail = urgency = ""
+        for line in block.split("\n"):
+            line = line.strip().lstrip("*").rstrip("*").strip()
+            if line.upper().startswith("SYMBOL:"):
+                symbol = line[7:].strip().strip("*")
+            elif line.upper().startswith("NAME:"):
+                name = line[5:].strip().strip("*")
+            elif line.upper().startswith("TYPE:"):
+                action_type = line[5:].strip().upper().strip("*")
+            elif line.upper().startswith("DETAIL:"):
+                detail = line[7:].strip().strip("*")
+            elif line.upper().startswith("URGENCY:"):
+                urgency = line[8:].strip().upper().strip("*")
+            elif detail and not line.upper().startswith(("ACTION", "SYMBOL", "NAME", "TYPE", "URGENCY", "===")):
+                detail += " " + line
+
+        if not symbol:
+            continue
+
+        t_color, t_icon = type_config.get(action_type, ("#6b7280", "—"))
+        u_color, u_dot = urgency_config.get(urgency, ("#6b7280", "○"))
+
+        # Determine if this is a new position suggestion
+        is_new = action_type in ("BUY", "WATCH") and symbol not in ["IVV", "OEF", "GLD", "IAU", "EFV", "BAI", "ISRG", "MSFT"]
+        new_badge = '<span style="background:#10b981; color:#fff; font-size:0.6rem; padding:2px 6px; border-radius:3px; margin-left:6px; font-weight:700; letter-spacing:1px;">NEW</span>' if is_new else ""
+
+        actions_html += f'''
+        <div style="display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.2s;" onmouseover="this.style.background='rgba(99,102,241,0.04)'" onmouseout="this.style.background='transparent'">
+          <div style="color:{u_color}; font-size:0.7rem; flex-shrink:0; width:10px;">{u_dot}</div>
+          <div style="font-family:'Fraunces',serif; font-weight:800; color:#fff; width:55px; flex-shrink:0;">{symbol}</div>
+          <div style="display:inline-flex; align-items:center; background:{t_color}18; color:{t_color}; font-size:0.7rem; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:1px; flex-shrink:0; min-width:55px; justify-content:center;">{t_icon} {action_type}</div>
+          <div style="color:#9ca3af; font-size:0.9rem; line-height:1.4; flex:1;">{detail}{new_badge}</div>
+        </div>'''
+
+    # Build conclusion HTML
     conclusion_html = ""
-    if conclusion_text:
+    if conclusion_text or actions_html:
         conclusion_html = f'''
-        <div style="background:linear-gradient(135deg, #1e1b4b, #312e81); border-radius:20px; padding:32px; margin-top:32px; text-align:center; border:1px solid rgba(99,102,241,0.3);">
-          <div style="font-size:0.75rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700; margin-bottom:12px;">Bottom Line</div>
-          <p style="font-family:'Fraunces',serif; font-size:1.3rem; font-weight:700; color:#e0e7ff; line-height:1.6; max-width:700px; margin:0 auto;">{conclusion_text}</p>
+        <div style="margin-top:40px;">
+          {"<div style='background:linear-gradient(135deg, #1e1b4b, #312e81); border-radius:20px; padding:28px; text-align:center; border:1px solid rgba(99,102,241,0.3); margin-bottom:28px;'><div style=&quot;font-size:0.7rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700; margin-bottom:10px;&quot;>Market Summary</div><p style=&quot;font-family:Fraunces,serif; font-size:1.2rem; font-weight:700; color:#e0e7ff; line-height:1.6; max-width:700px; margin:0 auto;&quot;>" + conclusion_text + "</p></div>" if conclusion_text else ""}
+          {"<div style='background:rgba(26,26,46,0.6); border-radius:16px; border:1px solid rgba(255,255,255,0.06); overflow:hidden;'><div style=&quot;padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; gap:10px;&quot;><span style=&quot;font-size:0.7rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700;&quot;>Action Plan</span><div style=&quot;flex:1; height:1px; background:linear-gradient(90deg, rgba(99,102,241,0.3), transparent);&quot;></div></div>" + actions_html + "</div>" if actions_html else ""}
         </div>'''
 
     return analysis_html, opps_html, conclusion_html
 
 
-def svg_sparkline(prices, width=120, height=40, color="#6366f1"):
-    """Generate an inline SVG sparkline from price data."""
+def svg_sparkline(prices, width=140, height=50, color="#6366f1", label="30D"):
+    """Generate an inline SVG sparkline with timeframe label and price range."""
     if not prices or len(prices) < 2:
         return ""
     mn, mx = min(prices), max(prices)
     rng = mx - mn if mx != mn else 1
+    chart_top = 14  # space for label
+    chart_height = height - chart_top - 2
     points = []
     for i, p in enumerate(prices):
         x = i / (len(prices) - 1) * width
-        y = height - ((p - mn) / rng * (height - 4)) - 2
+        y = chart_top + chart_height - ((p - mn) / rng * (chart_height - 4)) - 2
         points.append(f"{x:.1f},{y:.1f}")
 
-    # Gradient fill
     fill_points = [f"0,{height}"] + points + [f"{width},{height}"]
     trend_color = "#10b981" if prices[-1] >= prices[0] else "#ef4444"
+    pct_change = (prices[-1] / prices[0] - 1) * 100
+    pct_str = f"{'+'if pct_change>=0 else ''}{pct_change:.1f}%"
+    uid = abs(hash(tuple(prices))) % 100000
 
     return f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="display:block;">
-  <defs><linearGradient id="sg_{id(prices)}" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.3"/>
+  <defs><linearGradient id="sg{uid}" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.25"/>
     <stop offset="100%" stop-color="{trend_color}" stop-opacity="0"/>
   </linearGradient></defs>
-  <polygon points="{' '.join(fill_points)}" fill="url(#sg_{id(prices)})"/>
+  <text x="0" y="10" fill="#6b7280" font-size="9" font-family="Inter,sans-serif">{label}</text>
+  <text x="{width}" y="10" fill="{trend_color}" font-size="9" font-family="Inter,sans-serif" text-anchor="end" font-weight="600">{pct_str}</text>
+  <polygon points="{' '.join(fill_points)}" fill="url(#sg{uid})"/>
   <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
   <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="2.5" fill="{trend_color}"/>
+  <text x="0" y="{height - 1}" fill="#4b5563" font-size="8" font-family="Inter,sans-serif">${mn:.0f}</text>
+  <text x="{width}" y="{height - 1}" fill="#4b5563" font-size="8" font-family="Inter,sans-serif" text-anchor="end">${mx:.0f}</text>
 </svg>'''
 
 
@@ -756,7 +849,7 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
         <div class="pos-card" style="background: {card_bg};">
           <div class="pos-card-header">
             <div class="pos-card-symbol-group">
-              <span class="pos-card-symbol">{pos["symbol"]}</span>
+              <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:50%; background:{gain_color};"></span><span class="pos-card-symbol">{pos["symbol"]}</span></span>
               <span class="pos-card-name">{pos["name"]}</span>
             </div>
             <div class="pos-card-day" style="color: {color};">{"+" if pos["day_chg"] >= 0 else ""}{pos["day_chg"]:.1f}%</div>
