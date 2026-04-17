@@ -97,8 +97,45 @@ def generate_opus_analysis(data):
         sp = m.get("sp500", {})
         vix = m.get("vix", {})
 
+        # Load CLI context and principles for the model
+        cli_context = ""
+        principles_context = ""
+        try:
+            claude_md = STOCK_DIR / "CLAUDE.md"
+            if claude_md.exists():
+                cli_context = claude_md.read_text()[:3000]  # first 3K chars
+            principles_md = STOCK_DIR / "PRINCIPLES.md"
+            if principles_md.exists():
+                principles_context = principles_md.read_text()[:3000]
+        except Exception:
+            pass
+
         prompt = f"""You are a senior portfolio analyst writing a daily editorial briefing for a magazine called Portfolio Pulse.
-The reader is a self-directed investor with ~$300K. Be direct and opinionated — no disclaimers, no hedging.
+The reader is a self-directed investor named Ben, ~$300K portfolio, Wisconsin single filer.
+Be direct and opinionated — no disclaimers, no hedging.
+
+INVESTMENT FRAMEWORK (follow these principles):
+{principles_context[:2000] if principles_context else "Use Buffett/Munger/Dalio principles. Be greedy when others are fearful. Never sell on a single signal. Patience is the default."}
+
+TAX CONTEXT:
+- Federal bracket: 24% (single, $100-200K income)
+- Wisconsin state: 6.27% (with 30% exclusion on long-term gains)
+- SHORT-TERM total rate: 30.3% (positions held < 1 year)
+- LONG-TERM total rate: 19.4% (positions held > 1 year)
+- All Dec 2025 positions become long-term in Dec 2026 (237 days)
+- ISRG and MSFT bought Apr 2026 become long-term Apr 2027
+- Tax-loss harvesting is worth MORE now at the short-term rate
+- Selling a winner before Dec 2026 costs 10.9% extra in taxes vs waiting
+
+AVAILABLE CLI TOOLS (you have access to 60+ commands including):
+- recession-check: 10 weighted indicators for recession probability
+- detect-bottoms: early bottoming signal detection (RSI cross, MACD, volume spikes)
+- pre-buy: mandatory due diligence (insider check, analyst consensus, fundamentals)
+- insider: SEC EDGAR Form 4 filings (buy/sell/price/value)
+- whales: 13F institutional tracking (Buffett, Soros, Druckenmiller holdings)
+- congress: House STOCK Act disclosures
+- technicals: RSI, SMA 50/200, MACD, Bollinger Bands
+- backtest-fear: historical returns from buying during extreme fear (75% win rate)
 
 TODAY'S DATA:
 
@@ -165,11 +202,17 @@ ACTION:
 SYMBOL: [ticker]
 NAME: [company/fund name]
 TYPE: [HOLD / BUY / SELL / TRIM / ADD / WATCH]
-DETAIL: [specific instruction, e.g. "Hold through Apr 29 earnings — consensus expects beat" or "Trim 20 shares to lock $2,700 gain at overbought RSI 76" or "New position: buy 30 shares at $45 limit — 42% below high with bottoming signals"]
+DETAIL: [specific instruction with tax awareness. Examples:
+  "Hold through Dec 2026 — selling now triggers 30.3% short-term tax vs 19.4% if you wait 237 more days. The $1,088 tax savings outweighs the overbought RSI."
+  "Tax-harvest NOW — the $1,200 loss saves $363 at the 30.3% short-term rate. Swap into VTI to maintain exposure."
+  "New position: buy 30 shares at $45 limit — 42% below high, 4/4 bottoming signals, RSI 30. Fills healthcare gap in portfolio."
+  "Hold — Buffett principle: don't sell winners just because they're overbought. RSI 74 is elevated but not extreme."]
 URGENCY: [NOW / SOON / WAIT / NO ACTION]
 
 Include ALL current holdings (IVV, OEF, GLD, IAU, EFV, BAI, ISRG, MSFT) plus Cash.
 Then add 1-3 new opportunities from the bottoming signals if any merit action.
+ALWAYS factor in tax implications when recommending sells or trims.
+Reference which CLI tools or data sources informed each recommendation.
 
 RULES:
 - Be specific: use numbers, dates, percentages, share counts, dollar amounts
@@ -448,39 +491,54 @@ def parse_opus_output(text, data=None):
     return analysis_html, opps_html, conclusion_html
 
 
-def svg_sparkline(prices, width=140, height=50, color="#6366f1", label="30D"):
-    """Generate an inline SVG sparkline with timeframe label and price range."""
+def svg_sparkline(prices, width=130, height=36):
+    """Generate a clean inline SVG sparkline — just the line chart, no text."""
     if not prices or len(prices) < 2:
         return ""
     mn, mx = min(prices), max(prices)
     rng = mx - mn if mx != mn else 1
-    chart_top = 14  # space for label
-    chart_height = height - chart_top - 2
+    pad = 2
     points = []
     for i, p in enumerate(prices):
-        x = i / (len(prices) - 1) * width
-        y = chart_top + chart_height - ((p - mn) / rng * (chart_height - 4)) - 2
+        x = pad + i / (len(prices) - 1) * (width - pad * 2)
+        y = pad + (height - pad * 2) - ((p - mn) / rng * (height - pad * 2))
         points.append(f"{x:.1f},{y:.1f}")
 
-    fill_points = [f"0,{height}"] + points + [f"{width},{height}"]
+    fill_points = [f"{pad},{height - pad}"] + points + [f"{width - pad},{height - pad}"]
     trend_color = "#10b981" if prices[-1] >= prices[0] else "#ef4444"
-    pct_change = (prices[-1] / prices[0] - 1) * 100
-    pct_str = f"{'+'if pct_change>=0 else ''}{pct_change:.1f}%"
-    uid = abs(hash(tuple(prices))) % 100000
+    uid = abs(hash(tuple(prices[:5]))) % 100000
 
-    return f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="display:block;">
+    return f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="display:block;border-radius:6px;background:rgba(255,255,255,0.02);">
   <defs><linearGradient id="sg{uid}" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.25"/>
-    <stop offset="100%" stop-color="{trend_color}" stop-opacity="0"/>
+    <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.2"/>
+    <stop offset="100%" stop-color="{trend_color}" stop-opacity="0.02"/>
   </linearGradient></defs>
-  <text x="0" y="10" fill="#6b7280" font-size="9" font-family="Inter,sans-serif">{label}</text>
-  <text x="{width}" y="10" fill="{trend_color}" font-size="9" font-family="Inter,sans-serif" text-anchor="end" font-weight="600">{pct_str}</text>
   <polygon points="{' '.join(fill_points)}" fill="url(#sg{uid})"/>
-  <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="2.5" fill="{trend_color}"/>
-  <text x="0" y="{height - 1}" fill="#4b5563" font-size="8" font-family="Inter,sans-serif">${mn:.0f}</text>
-  <text x="{width}" y="{height - 1}" fill="#4b5563" font-size="8" font-family="Inter,sans-serif" text-anchor="end">${mx:.0f}</text>
+  <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="3" fill="{trend_color}"/>
 </svg>'''
+
+
+def sparkline_wrapper(prices, label="30D"):
+    """Wrap a sparkline SVG with HTML metadata (timeframe, change, range)."""
+    if not prices or len(prices) < 2:
+        return ""
+    trend_color = "#10b981" if prices[-1] >= prices[0] else "#ef4444"
+    pct = (prices[-1] / prices[0] - 1) * 100
+    mn, mx = min(prices), max(prices)
+    svg = svg_sparkline(prices)
+
+    return f'''<div style="display:flex; flex-direction:column; align-items:flex-end; gap:2px;">
+  <div style="display:flex; justify-content:space-between; width:130px; padding:0 2px;">
+    <span style="color:#4b5563; font-size:0.6rem; font-weight:600; letter-spacing:1px;">{label}</span>
+    <span style="color:{trend_color}; font-size:0.65rem; font-weight:700;">{"+" if pct >= 0 else ""}{pct:.1f}%</span>
+  </div>
+  {svg}
+  <div style="display:flex; justify-content:space-between; width:130px; padding:0 2px;">
+    <span style="color:#3b3b4f; font-size:0.55rem;">${mn:.0f}</span>
+    <span style="color:#3b3b4f; font-size:0.55rem;">${mx:.0f}</span>
+  </div>
+</div>'''
 
 
 def svg_donut(slices, size=200):
@@ -842,7 +900,7 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
             rsi_label = '<span class="rsi-badge rsi-oversold">OVERSOLD</span>'
 
         range_pct = max(0, min(100, pos.get("range_pos", 50)))
-        sparkline = svg_sparkline(pos.get("sparkline", []), width=140, height=45)
+        sparkline = sparkline_wrapper(pos.get("sparkline", []), label="30D")
         card_bg = "linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%)" if pos["gain"] >= 0 else "linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(239,68,68,0.02) 100%)"
 
         pos_cards += f'''
