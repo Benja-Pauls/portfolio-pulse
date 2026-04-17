@@ -27,6 +27,136 @@ load_dotenv(STOCK_DIR / ".env")
 import yfinance as yf
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Claude Opus Analysis
+# ---------------------------------------------------------------------------
+
+def generate_opus_analysis(data):
+    """Call Claude Opus to generate substantive investment analysis."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return None
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+
+        # Build context from gathered data
+        p = data["portfolio"]
+        m = data["market"]
+        macro = data["macro"]
+
+        positions_summary = "\n".join(
+            f"- {pos['symbol']} ({pos['name']}): ${pos['price']:.2f}, day {pos['day_chg']:+.1f}%, "
+            f"total P&L {pos['gain']:+,.0f} ({pos['gain_pct']:+.1f}%), RSI {pos['rsi']:.0f}"
+            for pos in p["positions"]
+        )
+
+        opps_summary = "\n".join(
+            f"- {o['symbol']}: ${o['price']:.0f}, {o['from_high']:+.0f}% from 52W high, RSI {o['rsi']:.0f}, "
+            f"at {o['position']:.0f}% of range"
+            for o in data.get("opportunities", [])
+        ) or "None detected"
+
+        fg = m.get("fear_greed", {})
+        sp = m.get("sp500", {})
+        vix = m.get("vix", {})
+
+        prompt = f"""You are an expert portfolio analyst writing a concise daily briefing for a self-directed investor.
+Be direct and opinionated — no disclaimers. Give specific, actionable insights.
+
+TODAY'S DATA:
+
+PORTFOLIO (${p['total_value']:,.0f} total, {p['day_change_pct']:+.2f}% today):
+{positions_summary}
+Cash: ${p['cash']:,.0f}
+
+MARKET:
+- S&P 500: {sp.get('price', 0):,.0f} ({sp.get('change', 0):+.2f}%)
+- VIX: {vix.get('price', 0):.1f}
+- Fear & Greed: {fg.get('value', 50):.0f} ({fg.get('label', 'neutral')})
+- Oil: ${m.get('oil', {}).get('price', 0):.0f}
+
+MACRO:
+- Yield Curve (10Y-2Y): {macro['spread']:+.2f}% ({'Normal' if macro['spread'] > 0 else 'INVERTED'})
+- 10Y Treasury: {macro['t10']:.2f}%
+
+BOTTOMING OPPORTUNITIES DETECTED:
+{opps_summary}
+
+KEY CONTEXT:
+- All positions bought Dec 2025 — SHORT-TERM until Dec 2026 (30.3% tax rate)
+- ISRG and MSFT bought Apr 2026 — SHORT-TERM until Apr 2027
+- ISRG earnings April 21, MSFT earnings April 29
+- IVV and OEF are 98.7% correlated (consolidation candidate)
+- GLD and IAU are identical exposure (consolidate after Dec 2026 for long-term tax rate)
+
+Write 4-6 analysis cards. Each card should have a bold title and 2-3 sentences of analysis.
+Focus on:
+1. What happened today and WHY (not just the numbers)
+2. Which positions need attention and WHAT TO DO about them
+3. Any upcoming catalysts (earnings, macro events) and how to prepare
+4. Whether cash should be deployed or held, and why
+5. Any bottoming opportunities worth investigating
+
+Format each card as:
+TITLE: [bold title]
+BODY: [2-3 sentences of direct, opinionated analysis]
+
+Be concise but substantive. Each card should tell the investor something they can act on."""
+
+        response = client.messages.create(
+            model="claude-opus-4-6",
+            max_tokens=1500,
+            messages=[{"role": "user", "content": prompt}],
+        )
+
+        return response.content[0].text
+    except Exception as e:
+        import traceback
+        print(f"Claude API error: {e}")
+        traceback.print_exc()
+        return None
+
+
+def parse_opus_cards(text):
+    """Parse Claude's response into HTML cards."""
+    if not text:
+        return ""
+
+    cards = []
+    current_title = None
+    current_body = []
+
+    for line in text.strip().split("\n"):
+        line = line.strip().lstrip("*").rstrip("*").strip()
+        if not line or line == "---":
+            continue
+        if line.upper().startswith("TITLE:"):
+            if current_title:
+                cards.append((current_title, " ".join(current_body)))
+            current_title = line[6:].strip().lstrip("*").rstrip("*").strip()
+            current_body = []
+        elif line.upper().startswith("BODY:"):
+            current_body.append(line[5:].strip())
+        elif current_title and not line.upper().startswith("DAILY") and len(line) > 10:
+            current_body.append(line)
+
+    if current_title:
+        cards.append((current_title, " ".join(current_body)))
+
+    colors = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
+    html = ""
+    for i, (title, body) in enumerate(cards):
+        color = colors[i % len(colors)]
+        html += f'''
+        <div style="background: #1a1a2e; border-radius: 12px; padding: 24px; margin-bottom: 16px; border-left: 4px solid {color};">
+          <h3 style="margin-bottom: 10px; font-size: 1.15rem; color: #fff;">{title}</h3>
+          <p style="color: #b0b8c8; line-height: 1.7; font-size: 1rem;">{body}</p>
+        </div>'''
+
+    return html
+
 
 def compute_rsi(prices, window=14):
     delta = prices.diff()
@@ -165,15 +295,23 @@ def gather_data():
     return data
 
 
-def render_html(data, analysis_text=None, password=None):
+def render_html(data, analysis_text=None, password=None, opus_html=None):
     """Render the data into a beautiful editorial magazine HTML."""
     now = datetime.now()
     p = data["portfolio"]
     m = data["market"]
     macro = data["macro"]
 
-    # Default analysis if none provided
-    if not analysis_text:
+    # Use Opus-generated analysis if available, fallback to auto-generated
+    if opus_html:
+        analysis_html = opus_html
+    elif analysis_text:
+        paragraphs = analysis_text.strip().split("\n\n")
+        analysis_html = ""
+        for para in paragraphs:
+            if para.strip():
+                analysis_html += f'<div style="background: #1a1a2e; border-radius: 12px; padding: 24px; margin-bottom: 16px; border-left: 4px solid #6366f1;"><p style="color: #d1d5db; line-height: 1.8; font-size: 1.05rem;">{para.strip()}</p></div>'
+    elif not analysis_text:
         # Generate basic analysis from the data
         analysis_parts = []
 
@@ -325,49 +463,51 @@ def render_html(data, analysis_text=None, password=None):
     oil = m.get("oil", {})
     gold = m.get("gold", {})
 
-    # Password protection
-    if password:
-        import hashlib
-        pw_hash = hashlib.sha256(password.encode()).hexdigest()
-        content_display = 'style="display:none;"'
-        password_script = f'''
-<div id="login" style="display:flex; min-height:100vh; align-items:center; justify-content:center; background:#0a0a0f;">
-  <div style="text-align:center; max-width:400px; padding:40px;">
-    <h1 class="serif" style="font-size:2rem; margin-bottom:8px; color:#fff;">Portfolio Pulse</h1>
-    <p style="color:#6b7280; margin-bottom:24px;">Enter password to view this issue</p>
-    <input id="pw" type="password" placeholder="Password" autofocus
-      style="width:100%; padding:12px 16px; border-radius:8px; border:1px solid #2a2a3e; background:#1a1a2e; color:#fff; font-size:1rem; margin-bottom:12px; outline:none;"
+    # Server-side PIN auth via /api/login (Vercel serverless function)
+    # Content hidden by default, shown after cookie verification
+    content_display = 'style="display:none;"'
+    password_script = '''
+<div id="login" style="display:flex; min-height:100vh; align-items:center; justify-content:center; background:linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);">
+  <div style="text-align:center; max-width:380px; padding:48px 32px; background:rgba(26,26,46,0.8); border-radius:20px; border:1px solid rgba(99,102,241,0.2); backdrop-filter:blur(20px);">
+    <div style="font-family:Fraunces,serif; font-size:1.8rem; font-weight:900; margin-bottom:8px;">📊 Portfolio Pulse</div>
+    <p style="color:#6b7280; margin-bottom:32px; font-size:0.9rem;">Enter PIN to view your report</p>
+    <input id="pin" type="password" maxlength="6" placeholder="••••" autofocus
+      style="width:100%; padding:14px 18px; border-radius:10px; border:1px solid #2a2a3e; background:#0a0a0f; color:#fff; font-size:1.4rem; text-align:center; letter-spacing:8px; outline:none; margin-bottom:16px;"
       onkeydown="if(event.key===\'Enter\')unlock()">
     <button onclick="unlock()"
-      style="width:100%; padding:12px; border-radius:8px; border:none; background:#6366f1; color:#fff; font-weight:700; font-size:1rem; cursor:pointer;">
+      style="width:100%; padding:14px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-weight:700; font-size:1rem; cursor:pointer;">
       Unlock
     </button>
-    <p id="err" style="color:#ef4444; margin-top:12px; display:none;">Incorrect password</p>
+    <p id="err" style="color:#ef4444; margin-top:12px; display:none; font-size:0.9rem;">Incorrect PIN</p>
   </div>
 </div>
 <script>
-async function unlock(){{
-  const pw=document.getElementById("pw").value;
-  const enc=new TextEncoder();
-  const hash=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",enc.encode(pw)))).map(b=>b.toString(16).padStart(2,"0")).join("");
-  if(hash==="{pw_hash}"){{
-    document.getElementById("login").style.display="none";
-    document.getElementById("content").style.display="block";
-    localStorage.setItem("pp_auth","1");
-  }}else{{
-    document.getElementById("err").style.display="block";
-  }}
-}}
-if(localStorage.getItem("pp_auth")==="1"){{
+function getCookie(n){{return(document.cookie.match(new RegExp("(?:^|;\\\\s*)"+n+"=([^;]*)"))||[])[1]}}
+if(getCookie("pp_auth")==="1"){{
   document.addEventListener("DOMContentLoaded",()=>{{
     document.getElementById("login").style.display="none";
     document.getElementById("content").style.display="block";
   }});
 }}
+async function unlock(){{
+  const pin=document.getElementById("pin").value;
+  try{{
+    const res=await fetch("/api/login",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{pin}})}});
+    if(res.ok){{
+      document.getElementById("login").style.display="none";
+      document.getElementById("content").style.display="block";
+    }}else{{
+      document.getElementById("err").style.display="block";
+      document.getElementById("pin").value="";
+      document.getElementById("pin").focus();
+    }}
+  }}catch(e){{
+    // Offline or local file — just show content
+    document.getElementById("login").style.display="none";
+    document.getElementById("content").style.display="block";
+  }}
+}}
 </script>'''
-    else:
-        content_display = ''
-        password_script = ''
 
     html = f'''<!DOCTYPE html>
 <html lang="en">
@@ -456,7 +596,18 @@ if(localStorage.getItem("pp_auth")==="1"){{
 
   @media (max-width: 640px) {{
     .section, .dark-section .inner, .accent-section .inner, .alert-section .inner, .green-section .inner {{ padding-left: 16px; padding-right: 16px; }}
-    table {{ font-size: 0.85rem; }}
+    .hero {{ padding: 32px 16px; min-height: 80vh; }}
+    .hero .big-number {{ font-size: 3rem; }}
+    .hero .title {{ font-size: 2rem; }}
+    .section-title {{ font-size: 1.6rem; }}
+    table {{ font-size: 0.8rem; display: block; overflow-x: auto; white-space: nowrap; }}
+    thead th {{ padding: 8px 10px; font-size: 0.65rem; }}
+    tbody td {{ padding: 8px 10px !important; }}
+    .market-grid {{ grid-template-columns: repeat(3, 1fr); gap: 10px; }}
+    .market-card {{ padding: 14px 10px; }}
+    .market-card .value {{ font-size: 1.2rem; }}
+    .market-card .label {{ font-size: 0.65rem; }}
+    .accent-section div[style*="grid-template-columns: 1fr 1fr 1fr"] {{ display: flex; flex-direction: column; gap: 20px; text-align: center; }}
   }}
 </style>
 </head>
@@ -604,22 +755,38 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", default=None, help="Issue date (YYYY-MM-DD)")
     parser.add_argument("--analysis", default=None, help="AI-generated analysis text (multiline). If not provided, a placeholder is used.")
-    parser.add_argument("--password", default=None, help="Password-protect the page (optional, for web hosting)")
+    # Password protection is handled server-side via Vercel /api/login
     args = parser.parse_args()
 
     issue_date = args.date or datetime.now().strftime("%Y-%m-%d")
+    # Output to both issues/ (local archive) and public/ (Vercel deploy)
     issues_dir = Path(__file__).parent / "issues"
+    public_dir = Path(__file__).parent / "public"
     issues_dir.mkdir(exist_ok=True)
+    public_dir.mkdir(exist_ok=True)
 
     print(f"Gathering market data...")
     data = gather_data()
 
+    print(f"Generating AI analysis with Claude Opus...")
+    opus_text = generate_opus_analysis(data)
+    opus_html = parse_opus_cards(opus_text) if opus_text else None
+    if opus_html:
+        print(f"Opus analysis generated ({len(opus_text)} chars)")
+    else:
+        print("Opus unavailable, using auto-generated analysis")
+
     print(f"Rendering HTML...")
-    html = render_html(data, analysis_text=args.analysis, password=args.password)
+    html = render_html(data, analysis_text=args.analysis, opus_html=opus_html)
 
     output = issues_dir / f"{issue_date}.html"
     output.write_text(html)
     print(f"Generated: {output}")
+
+    # Also write to public/ for Vercel (index + dated)
+    (public_dir / "index.html").write_text(html)
+    (public_dir / f"{issue_date}.html").write_text(html)
+    print(f"Vercel public: {public_dir / 'index.html'}")
 
     return str(output)
 

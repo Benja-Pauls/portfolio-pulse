@@ -1,0 +1,8 @@
+{
+  "name": "portfolio-pulse",
+  "version": "1.0.0",
+  "private": false,
+  "description": "AI-powered investment portfolio magazine — daily editorial-style market analysis",
+  "license": "MIT",
+  "repository": "https://github.com/Benja-Pauls/portfolio-pulse"
+}

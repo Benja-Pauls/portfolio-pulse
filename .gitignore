@@ -3,3 +3,6 @@ __pycache__/
 .env
 .venv/
 issues/*.html
+public/
+.vercel/
+node_modules/
