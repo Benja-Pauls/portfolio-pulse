@@ -27,6 +27,41 @@ load_dotenv(STOCK_DIR / ".env")
 import yfinance as yf
 import numpy as np
 
+# Auth script — defined outside f-strings to avoid brace escaping issues
+AUTH_SCRIPT = r"""
+function getCookie(n) {
+  var m = document.cookie.match(new RegExp("(?:^|;\\s*)" + n + "=([^;]*)"));
+  return m ? m[1] : null;
+}
+if (getCookie("pp_auth") === "1") {
+  document.addEventListener("DOMContentLoaded", function() {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("content").style.display = "block";
+  });
+}
+async function unlock() {
+  var p = document.getElementById("pin").value;
+  try {
+    var r = await fetch("/api/login", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pin: p})
+    });
+    if (r.ok) {
+      document.getElementById("login").style.display = "none";
+      document.getElementById("content").style.display = "block";
+    } else {
+      document.getElementById("err").style.display = "block";
+      document.getElementById("pin").value = "";
+      document.getElementById("pin").focus();
+    }
+  } catch(e) {
+    document.getElementById("login").style.display = "none";
+    document.getElementById("content").style.display = "block";
+  }
+}
+"""
+
 # ---------------------------------------------------------------------------
 # Claude Opus Analysis
 # ---------------------------------------------------------------------------
@@ -523,31 +558,7 @@ def render_html(data, analysis_text=None, password=None, opus_html=None):
   </div>
 </div>
 <script>
-function getCookie(n){{return(document.cookie.match(new RegExp("(?:^|;\\\\s*)"+n+"=([^;]*)"))||[])[1]}}
-if(getCookie("pp_auth")==="1"){{
-  document.addEventListener("DOMContentLoaded",()=>{{
-    document.getElementById("login").style.display="none";
-    document.getElementById("content").style.display="block";
-  }});
-}}
-async function unlock(){{
-  const pin=document.getElementById("pin").value;
-  try{{
-    const res=await fetch("/api/login",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{pin}})}});
-    if(res.ok){{
-      document.getElementById("login").style.display="none";
-      document.getElementById("content").style.display="block";
-    }}else{{
-      document.getElementById("err").style.display="block";
-      document.getElementById("pin").value="";
-      document.getElementById("pin").focus();
-    }}
-  }}catch(e){{
-    // Offline or local file — just show content
-    document.getElementById("login").style.display="none";
-    document.getElementById("content").style.display="block";
-  }}
-}}
+''' + AUTH_SCRIPT + '''
 </script>'''
 
     # VIX status text
