@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+<title>Portfolio Pulse — April 16, 2026</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0a0f;
+    color: #e5e5e5;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  .serif { font-family: 'Fraunces', Georgia, 'Times New Roman', serif; }
+
+  /* ── Fade-in animation ── */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  .fade-section {
+    opacity: 0;
+    animation: fadeInUp 0.8s ease-out forwards;
+  }
+  .fade-section:nth-child(1) { animation-delay: 0.1s; }
+  .fade-section:nth-child(2) { animation-delay: 0.25s; }
+  .fade-section:nth-child(3) { animation-delay: 0.4s; }
+  .fade-section:nth-child(4) { animation-delay: 0.55s; }
+  .fade-section:nth-child(5) { animation-delay: 0.7s; }
+  .fade-section:nth-child(6) { animation-delay: 0.85s; }
+  .fade-section:nth-child(7) { animation-delay: 1.0s; }
+  .fade-section:nth-child(8) { animation-delay: 1.1s; }
+
+  /* ── Hero ── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    padding: 48px 24px;
+    background: linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 50%, rgba(99, 102, 241, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 70% 30%, rgba(16, 185, 129, 0.07) 0%, transparent 50%);
+  }
+  .hero * { position: relative; z-index: 1; }
+  .hero .edition {
+    color: #6366f1;
+    text-transform: uppercase;
+    letter-spacing: 8px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    margin-bottom: 24px;
+  }
+  .hero .title {
+    font-size: clamp(2.8rem, 8vw, 5.5rem);
+    font-weight: 900;
+    line-height: 1.05;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #fff 0%, #c7d2fe 50%, #a5b4fc 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero .date {
+    color: #6b7280;
+    font-size: 1.05rem;
+    margin-bottom: 48px;
+    letter-spacing: 1px;
+  }
+  .hero .big-number {
+    font-size: clamp(3.5rem, 12vw, 7rem);
+    font-weight: 900;
+    color: #fff;
+    line-height: 1;
+    letter-spacing: -2px;
+  }
+  .hero .change {
+    font-size: 1.4rem;
+    color: #10b981;
+    font-weight: 700;
+    margin-top: 12px;
+    letter-spacing: 0.5px;
+  }
+  .hero .pnl {
+    color: #6b7280;
+    font-size: 1.05rem;
+    margin-top: 12px;
+  }
+
+  /* ── Section base ── */
+  .section { padding: 72px 24px; max-width: 920px; margin: 0 auto; }
+  .section-label {
+    color: #6366f1;
+    text-transform: uppercase;
+    letter-spacing: 6px;
+    font-weight: 700;
+    font-size: 0.75rem;
+    margin-bottom: 14px;
+  }
+  .section-title {
+    font-size: clamp(1.8rem, 5vw, 2.8rem);
+    font-weight: 900;
+    margin-bottom: 36px;
+    line-height: 1.1;
+    letter-spacing: -0.5px;
+  }
+
+  /* ── Dark section ── */
+  .dark-section { background: #111118; padding: 72px 24px; }
+  .dark-section .inner { max-width: 920px; margin: 0 auto; }
+
+  /* ── Accent section ── */
+  .accent-section { background: linear-gradient(135deg, #1e1b4b, #312e81); padding: 72px 24px; }
+  .accent-section .inner { max-width: 920px; margin: 0 auto; }
+
+  /* ── Analysis section ── */
+  .analysis-section {
+    background: linear-gradient(180deg, #0f0f18 0%, #141422 100%);
+    padding: 72px 24px;
+    border-top: 1px solid rgba(99,102,241,0.2);
+    border-bottom: 1px solid rgba(99,102,241,0.2);
+  }
+  .analysis-section .inner { max-width: 920px; margin: 0 auto; }
+
+  /* ── Green section ── */
+  .green-section { background: linear-gradient(135deg, #052e16, #064e3b); padding: 72px 24px; }
+  .green-section .inner { max-width: 920px; margin: 0 auto; }
+
+  /* ── Market cards ── */
+  .market-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-top: 28px;
+  }
+  .market-card {
+    background: rgba(26, 26, 46, 0.8);
+    border-radius: 16px;
+    padding: 24px 20px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+  .market-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.08);
+  }
+  .market-card .label {
+    color: #6b7280;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  .market-card .value {
+    font-size: 1.6rem;
+    font-weight: 800;
+    font-family: 'Fraunces', Georgia, serif;
+    letter-spacing: -0.5px;
+  }
+  .market-card .chg {
+    font-size: 0.95rem;
+    margin-top: 6px;
+    font-weight: 700;
+  }
+
+  /* ── Fear & Greed gauge ── */
+  .fear-greed-wrapper {
+    margin-top: 40px;
+    padding: 32px;
+    background: rgba(26, 26, 46, 0.6);
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .fear-greed-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 20px;
+  }
+  .fear-greed-label {
+    color: #6b7280;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    font-weight: 600;
+  }
+  .fear-greed-value {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 2.4rem;
+    font-weight: 900;
+    letter-spacing: -1px;
+  }
+  .fear-greed-status {
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .gauge {
+    width: 100%;
+    height: 18px;
+    background: linear-gradient(to right, #ef4444 0%, #f97316 25%, #eab308 45%, #10b981 70%, #22c55e 100%);
+    border-radius: 10px;
+    position: relative;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+  .gauge-marker {
+    position: absolute;
+    top: -6px;
+    width: 30px;
+    height: 30px;
+    background: #fff;
+    border-radius: 50%;
+    border: 4px solid #0a0a0f;
+    left: 62.2285714285714%;
+    transform: translateX(-50%);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    transition: left 0.5s ease;
+  }
+  .gauge-labels {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 10px;
+    font-size: 0.7rem;
+    color: #4b5563;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+  }
+
+  /* ── Position cards ── */
+  .pos-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+  .pos-card {
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }
+  .pos-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.12);
+  }
+  .pos-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .pos-card-symbol-group {
+    display: flex;
+    flex-direction: column;
+  }
+  .pos-card-symbol {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.35rem;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+  }
+  .pos-card-name {
+    color: #6b7280;
+    font-size: 0.8rem;
+    margin-top: 2px;
+  }
+  .pos-card-day {
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.04);
+    min-width: 44px;
+    text-align: center;
+  }
+  .pos-card-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 16px;
+  }
+  .pos-card-price {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #d1d5db;
+  }
+  .pos-card-pnl {
+    text-align: right;
+  }
+  .pos-card-pnl-amount {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.4rem;
+    font-weight: 900;
+    display: block;
+    letter-spacing: -0.5px;
+  }
+  .pos-card-pnl-pct {
+    font-size: 0.85rem;
+    font-weight: 600;
+    opacity: 0.8;
+  }
+  .pos-card-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 12px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  .pos-card-rsi {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .pos-card-rsi-label {
+    color: #4b5563;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+  }
+  .pos-card-rsi-value {
+    font-weight: 800;
+    font-size: 0.95rem;
+  }
+  .rsi-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .rsi-overbought {
+    color: #ef4444;
+    background: rgba(239,68,68,0.12);
+  }
+  .rsi-oversold {
+    color: #10b981;
+    background: rgba(16,185,129,0.12);
+  }
+  .pos-card-range-bar {
+    flex: 0 0 80px;
+  }
+  .range-track {
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .range-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  .cash-bar {
+    margin-top: 20px;
+    display: flex;
+    gap: 20px;
+    color: #6b7280;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 16px 20px;
+    background: rgba(255,255,255,0.02);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }
+  .cash-bar span {
+    font-weight: 700;
+    color: #d1d5db;
+  }
+
+  /* ── Analysis cards (editorial style) ── */
+  .analysis-card {
+    background: rgba(26, 26, 46, 0.6);
+    border-radius: 16px;
+    padding: 0;
+    margin-bottom: 20px;
+    border: 1px solid rgba(255,255,255,0.04);
+    overflow: hidden;
+    transition: transform 0.2s ease;
+  }
+  .analysis-card:hover {
+    transform: translateY(-2px);
+  }
+  .analysis-card-inner {
+    padding: 28px 32px 28px 32px;
+    position: relative;
+    border-left: 4px solid var(--accent, #6366f1);
+  }
+  .analysis-quote-mark {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 4rem;
+    line-height: 1;
+    opacity: 0.15;
+    position: absolute;
+    top: 8px;
+    right: 24px;
+    pointer-events: none;
+  }
+  .analysis-card-title {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+  .analysis-card-body {
+    color: #b0b8c8;
+    line-height: 1.8;
+    font-size: 1.1rem;
+  }
+
+  /* ── Macro grid ── */
+  .macro-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    text-align: center;
+  }
+  .macro-stat-number {
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 2.8rem;
+    font-weight: 900;
+    color: #a5b4fc;
+    letter-spacing: -1px;
+  }
+  .macro-stat-label {
+    color: #818cf8;
+    font-size: 0.8rem;
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+  }
+  .macro-stat-status {
+    font-weight: 700;
+    margin-top: 10px;
+    font-size: 0.95rem;
+  }
+
+  /* ── Opportunities ── */
+  .opp-card {
+    background: rgba(16,185,129,0.06);
+    border-radius: 16px;
+    padding: 22px 24px;
+    margin-bottom: 14px;
+    border: 1px solid rgba(16,185,129,0.12);
+    transition: transform 0.2s ease;
+  }
+  .opp-card:hover {
+    transform: translateY(-2px);
+  }
+
+  /* ── Footer ── */
+  .footer {
+    text-align: center;
+    padding: 64px 24px;
+    color: #4b5563;
+    font-size: 0.9rem;
+    background: #0a0a0f;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .footer a { color: #6366f1; text-decoration: none; }
+  .footer a:hover { text-decoration: underline; }
+  .claude-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 24px;
+    padding: 10px 20px;
+    background: rgba(181, 120, 255, 0.08);
+    border: 1px solid rgba(181, 120, 255, 0.2);
+    border-radius: 100px;
+    color: #b578ff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .claude-badge svg {
+    width: 16px;
+    height: 16px;
+    fill: #b578ff;
+  }
+
+  /* ── Mobile responsive ── */
+  @media (max-width: 768px) {
+    .section { padding: 48px 20px; }
+    .dark-section, .analysis-section, .accent-section, .green-section { padding: 48px 20px; }
+    .section, .dark-section .inner, .accent-section .inner, .analysis-section .inner, .green-section .inner {
+      padding-left: 16px;
+      padding-right: 16px;
+    }
+    .hero { padding: 40px 20px; min-height: 85vh; }
+    .hero .big-number { font-size: 2.8rem; letter-spacing: -1px; }
+    .hero .title { font-size: 2rem; }
+    .hero .edition { letter-spacing: 5px; font-size: 0.7rem; }
+    .hero .change { font-size: 1.15rem; }
+    .section-title { font-size: 1.5rem; }
+
+    /* Market grid: 2 columns on mobile */
+    .market-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .market-card { padding: 18px 14px; }
+    .market-card .value { font-size: 1.3rem; }
+    .market-card .label { font-size: 0.65rem; letter-spacing: 2px; }
+
+    /* Fear gauge */
+    .fear-greed-wrapper { padding: 24px 20px; }
+    .fear-greed-value { font-size: 2rem; }
+
+    /* Position cards: single column */
+    .pos-grid { grid-template-columns: 1fr; }
+    .pos-card { padding: 20px; }
+    .pos-card-pnl-amount { font-size: 1.2rem; }
+
+    /* Macro grid: single column */
+    .macro-grid { grid-template-columns: 1fr; gap: 28px; }
+    .macro-stat-number { font-size: 2.4rem; }
+
+    /* Analysis cards */
+    .analysis-card-inner { padding: 22px 20px; }
+    .analysis-card-body { font-size: 1rem; }
+    .analysis-quote-mark { font-size: 3rem; right: 16px; }
+
+    /* Cash bar */
+    .cash-bar { flex-direction: column; gap: 8px; }
+
+    /* Ensure min touch target */
+    button, a, .market-card, .pos-card, .analysis-card {
+      min-height: 44px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .market-grid { grid-template-columns: 1fr; }
+    .hero .big-number { font-size: 2.2rem; }
+  }
+</style>
+</head>
+<body>
+
+<div id="content" style="display:none;">
+
+<!-- HERO -->
+<div class="hero fade-section">
+  <div class="edition">Portfolio Pulse &middot; April 16, 2026</div>
+  <h1 class="title serif">Market Report</h1>
+  <p class="date">Thursday &middot; 10:46 PM</p>
+  <div class="big-number serif">$322,157</div>
+  <div class="change">▲ +$459 (+0.14%) today</div>
+  <div class="pnl">All-time P&amp;L: +$33,724 (+15.3%)</div>
+</div>
+
+<!-- MARKET PULSE -->
+<div class="dark-section fade-section">
+  <div class="inner">
+    <div class="section-label">Market Pulse</div>
+    <h2 class="section-title serif">How the markets moved</h2>
+    <div class="market-grid">
+      <div class="market-card" style="border-bottom: 3px solid rgba(16,185,129,0.3);">
+        <div class="label">S&amp;P 500</div>
+        <div class="value" style="color: #fff;">7,041</div>
+        <div class="chg" style="color: #10b981;">+0.26%</div>
+      </div>
+      <div class="market-card" style="border-bottom: 3px solid rgba(16,185,129,0.3);">
+        <div class="label">Nasdaq</div>
+        <div class="value" style="color: #fff;">24,103</div>
+        <div class="chg" style="color: #10b981;">+0.36%</div>
+      </div>
+      <div class="market-card" style="border-bottom: 3px solid rgba(107,114,128,0.3);">
+        <div class="label">VIX</div>
+        <div class="value" style="color: #fff;">17.9</div>
+        <div class="chg" style="color: #10b981;">Normal</div>
+      </div>
+      <div class="market-card" style="border-bottom: 3px solid rgba(239,68,68,0.3);">
+        <div class="label">Oil</div>
+        <div class="value" style="color: #fff;">$90</div>
+        <div class="chg" style="color: #ef4444;">-1.4%</div>
+      </div>
+      <div class="market-card" style="border-bottom: 3px solid rgba(16,185,129,0.3);">
+        <div class="label">Gold</div>
+        <div class="value" style="color: #fff;">$4,815</div>
+        <div class="chg" style="color: #10b981;">+0.3%</div>
+      </div>
+      <div class="market-card" style="border-bottom: 3px solid #10b98140;">
+        <div class="label">Fear &amp; Greed</div>
+        <div class="value" style="color: #10b981;">62</div>
+        <div class="chg" style="color: #10b981;">Greed</div>
+      </div>
+    </div>
+    <div class="fear-greed-wrapper">
+      <div class="fear-greed-header">
+        <div>
+          <div class="fear-greed-label">Fear &amp; Greed Index</div>
+        </div>
+        <div style="text-align: right;">
+          <div class="fear-greed-value" style="color: #10b981;">62</div>
+          <div class="fear-greed-status" style="color: #10b981;">Greed</div>
+        </div>
+      </div>
+      <div class="gauge"><div class="gauge-marker"></div></div>
+      <div class="gauge-labels">
+        <span>Extreme Fear</span>
+        <span>Neutral</span>
+        <span>Extreme Greed</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MACRO HEALTH -->
+<div class="accent-section fade-section">
+  <div class="inner">
+    <div class="section-label">Macro Health</div>
+    <h2 class="section-title serif">Recession probability: Low</h2>
+    <div class="macro-grid">
+      <div>
+        <div class="macro-stat-number">+0.70%</div>
+        <div class="macro-stat-label">10Y-2Y Spread</div>
+        <div class="macro-stat-status" style="color: #10b981;">
+          Normal
+        </div>
+      </div>
+      <div>
+        <div class="macro-stat-number">4.31%</div>
+        <div class="macro-stat-label">10Y Treasury</div>
+      </div>
+      <div>
+        <div class="macro-stat-number">3.61%</div>
+        <div class="macro-stat-label">2Y Treasury</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- POSITIONS -->
+<div class="section fade-section">
+  <div class="section-label">Holdings</div>
+  <h2 class="section-title serif">Your positions today</h2>
+  <div class="pos-grid">
+    
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">IVV</span>
+              <span class="pos-card-name">iShares S&P 500</span>
+            </div>
+            <div class="pos-card-day" style="color: #10b981;">+0.2%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$704.74</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$13,810</span>
+              <span class="pos-card-pnl-pct">+29.1%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">84</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 83.90101032206296%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">OEF</span>
+              <span class="pos-card-name">iShares S&P 100</span>
+            </div>
+            <div class="pos-card-day" style="color: #10b981;">+0.1%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$345.58</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$2,852</span>
+              <span class="pos-card-pnl-pct">+5.3%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">85</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 84.70081426330337%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">GLD</span>
+              <span class="pos-card-name">SPDR Gold</span>
+            </div>
+            <div class="pos-card-day" style="color: #ef4444;">-0.1%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$440.08</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$3,538</span>
+              <span class="pos-card-pnl-pct">+13.2%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">76</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 76.24428811574731%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">MSFT</span>
+              <span class="pos-card-name">Microsoft</span>
+            </div>
+            <div class="pos-card-day" style="color: #10b981;">+2.2%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$420.26</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$3,334</span>
+              <span class="pos-card-pnl-pct">+13.4%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">82</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 82.48952522256278%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">IAU</span>
+              <span class="pos-card-name">iShares Gold</span>
+            </div>
+            <div class="pos-card-day" style="color: #ef4444;">-0.1%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$90.16</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$3,560</span>
+              <span class="pos-card-pnl-pct">+15.5%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">76</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 76.35535144056546%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">EFV</span>
+              <span class="pos-card-name">iShares Int'l Value</span>
+            </div>
+            <div class="pos-card-day" style="color: #ef4444;">-0.2%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$78.08</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$4,997</span>
+              <span class="pos-card-pnl-pct">+30.8%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">84</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 84.33029920840185%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(239,68,68,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">ISRG</span>
+              <span class="pos-card-name">Intuitive Surgical</span>
+            </div>
+            <div class="pos-card-day" style="color: #ef4444;">-2.2%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$458.08</div>
+            <div class="pos-card-pnl" style="color: #ef4444;">
+              <span class="pos-card-pnl-amount">$-6</span>
+              <span class="pos-card-pnl-pct">-0.0%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #6b7280;">44</span>
+              
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 44.18009819232083%; background: #ef4444;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="pos-card" style="background: linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%);">
+          <div class="pos-card-header">
+            <div class="pos-card-symbol-group">
+              <span class="pos-card-symbol">BAI</span>
+              <span class="pos-card-name">iShares AI Innovation</span>
+            </div>
+            <div class="pos-card-day" style="color: #10b981;">+1.1%</div>
+          </div>
+          <div class="pos-card-body">
+            <div class="pos-card-price">$40.02</div>
+            <div class="pos-card-pnl" style="color: #10b981;">
+              <span class="pos-card-pnl-amount">+$1,639</span>
+              <span class="pos-card-pnl-pct">+16.6%</span>
+            </div>
+          </div>
+          <div class="pos-card-footer">
+            <div class="pos-card-rsi">
+              <span class="pos-card-rsi-label">RSI</span>
+              <span class="pos-card-rsi-value" style="color: #ef4444;">82</span>
+              <span class="rsi-badge rsi-overbought">OVERBOUGHT</span>
+            </div>
+            <div class="pos-card-range-bar">
+              <div class="range-track">
+                <div class="range-fill" style="width: 82.37476963189229%; background: #10b981;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+  </div>
+  <div class="cash-bar">
+    <div>Cash: <span>$43,400</span></div>
+    <div>CD: <span>$24,998</span></div>
+  </div>
+</div>
+
+<!-- AI ANALYSIS -->
+<div class="analysis-section fade-section">
+  <div class="inner">
+    <div class="section-label">Analysis</div>
+    <h2 class="section-title serif">What you need to know</h2>
+    
+        <div class="analysis-card" style="--accent: #6366f1;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #6366f1;">“</div>
+            <h3 class="analysis-card-title">MICROSOFT SURGES INTO EARNINGS WEEK — TAKE PARTIAL PROFITS</h3>
+            <p class="analysis-card-body">MSFT ripped +2.2% today, likely on continued AI spending optimism and pre-earnings positioning, pushing RSI to 82 — firmly overbought heading into April 29 results. You're up 13.4% in weeks, which is exceptional, but this is short-term gains taxed at 30.3%. Consider trimming 30-40% of the position before earnings; the risk/reward of holding a fully overbought name through a binary event is poor math.</p>
+          </div>
+        </div>
+        <div class="analysis-card" style="--accent: #10b981;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #10b981;">“</div>
+            <h3 class="analysis-card-title">ISRG IS YOUR ONE POSITION AT FAIR VALUE — EARNINGS MONDAY IS THE CATALYST</h3>
+            <p class="analysis-card-body">ISRG sits at RSI 44 with essentially zero P&L — it's the only position in your book that isn't extended. April 21 earnings are imminent; the Street expects strong procedure volume growth and management has been guiding bullishly on da Vinci 5 adoption. Hold through earnings — this is the rare case where the setup (not overbought, positive fundamental trajectory) actually favors taking the event risk. If it gaps down post-earnings toward $430, add with some of your cash.</p>
+          </div>
+        </div>
+        <div class="analysis-card" style="--accent: #f59e0b;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #f59e0b;">“</div>
+            <h3 class="analysis-card-title">YOUR LARGE-CAP U.S. EQUITY BLOCK IS DANGEROUSLY OVERBOUGHT AND REDUNDANT</h3>
+            <p class="analysis-card-body">IVV (RSI 84), OEF (RSI 85), and BAI (RSI 82) are all screaming overbought simultaneously — and IVV/OEF are 98.7% correlated, meaning you're doubling up on the same bet. Sell OEF entirely; the +5.3% gain is modest enough that the ~$865 tax hit is trivial, and you eliminate redundancy while locking in profit on an overheated position. Redeploy that ~$57K into differentiated exposure or hold as cash for better entries.</p>
+          </div>
+        </div>
+        <div class="analysis-card" style="--accent: #ef4444;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #ef4444;">“</div>
+            <h3 class="analysis-card-title">NIKE AT RSI 33 IS INTERESTING BUT NOT YET ACTIONABLE</h3>
+            <p class="analysis-card-body">NKE at $46, down 41% from highs, is approaching deep-value territory but the turnaround under new CEO Elliott Hill is still in "show me" phase with no clear margin inflection yet. Oil at $90 is also a headwind for consumer discretionary spending. Put it on the watchlist with a buy trigger around $42-43 (RSI sub-30) — don't catch this knife until you see one clean earnings beat or a confirmed higher low on the chart.</p>
+          </div>
+        </div>
+        <div class="analysis-card" style="--accent: #8b5cf6;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #8b5cf6;">“</div>
+            <h3 class="analysis-card-title">$43K CASH IS YOUR BEST ASSET RIGHT NOW — PROTECT IT</h3>
+            <p class="analysis-card-body">With RSIs of 82-85 across your core holdings, Fear & Greed at 62, and the S&P at 7,041 after a relentless run, the market is priced for perfection. The yield curve has normalized and 10Y at 4.31% means your cash earns ~4.3% risk-free while you wait for a pullback. Deploy only on earnings-driven dislocations (ISRG dip, MSFT overreaction) or when RSIs across your book reset below 60 — not before.</p>
+          </div>
+        </div>
+        <div class="analysis-card" style="--accent: #06b6d4;">
+          <div class="analysis-card-inner">
+            <div class="analysis-quote-mark" style="color: #06b6d4;">“</div>
+            <h3 class="analysis-card-title">GOLD ALLOCATION IS WORKING BUT DEMANDS CONSOLIDATION PLANNING</h3>
+            <p class="analysis-card-body">GLD and IAU are literally the same trade — combined ~$54K in identical gold exposure, both up ~14%, both RSI 76. The good news: they were bought Dec 2025, so in six months they flip to long-term capital gains. Mark your calendar for Dec 2026: sell IAU (smaller position), keep GLD, and eliminate the redundancy tax-efficiently. Until then, don't touch either — gold at these levels with geopolitical risk elevated and oil at $90 is a legitimate portfolio hedge earning its keep.</p>
+          </div>
+        </div>
+  </div>
+</div>
+
+<!-- OPPORTUNITIES -->
+<div class="green-section fade-section">
+  <div class="inner">
+    <div class="section-label">Radar</div>
+    <h2 class="section-title serif">Bottoming opportunities</h2>
+    <p style="color: #86efac; margin-bottom: 28px; font-size: 1.05rem; line-height: 1.7;">Stocks showing early recovery signals after significant pullbacks. These are candidates worth investigating, not automatic buys.</p>
+    
+        <div class="opp-card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <span style="font-family: 'Fraunces', Georgia, serif; font-size: 1.4rem; font-weight: 900; color: #fff;">NKE</span>
+              <span style="color: #6b7280; margin-left: 10px; font-size: 1rem;">$46</span>
+            </div>
+            <div style="text-align: right;">
+              <div style="color: #ef4444; font-weight: 800; font-size: 1.1rem;">-41% from high</div>
+              <div style="color: #6b7280; font-size: 0.9rem; margin-top: 4px;">RSI 33 &middot; 9% of range</div>
+            </div>
+          </div>
+        </div>
+  </div>
+</div>
+
+<!-- FOOTER -->
+<div class="footer fade-section">
+  <p style="margin-bottom: 8px; font-size: 1rem;"><strong style="color: #9ca3af;">Portfolio Pulse</strong> &mdash; AI-powered investment analysis</p>
+  <p>Generated by <a href="https://github.com/Benja-Pauls/portfolio-pulse">portfolio-pulse</a> &middot; April 16, 2026 10:46 PM</p>
+  <p style="margin-top: 14px; font-size: 0.8rem; color: #374151;">This is automated analysis, not financial advice. Always do your own research.</p>
+  <div class="claude-badge">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6zm4 4h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+    Powered by Claude Opus
+  </div>
+</div>
+
+</div><!-- end #content -->
+
+
+<div id="login" style="display:flex; min-height:100vh; align-items:center; justify-content:center; background:linear-gradient(135deg, #0a0a0f 0%, #1a1a2e 50%, #16213e 100%);">
+  <div style="text-align:center; max-width:380px; padding:48px 32px; background:rgba(26,26,46,0.8); border-radius:20px; border:1px solid rgba(99,102,241,0.2); backdrop-filter:blur(20px);">
+    <div style="font-family:Fraunces,serif; font-size:1.8rem; font-weight:900; margin-bottom:8px;">📊 Portfolio Pulse</div>
+    <p style="color:#6b7280; margin-bottom:32px; font-size:0.9rem;">Enter PIN to view your report</p>
+    <input id="pin" type="password" maxlength="6" placeholder="••••" autofocus
+      style="width:100%; padding:14px 18px; border-radius:10px; border:1px solid #2a2a3e; background:#0a0a0f; color:#fff; font-size:1.4rem; text-align:center; letter-spacing:8px; outline:none; margin-bottom:16px;"
+      onkeydown="if(event.key==='Enter')unlock()">
+    <button onclick="unlock()"
+      style="width:100%; padding:14px; border-radius:10px; border:none; background:linear-gradient(135deg,#6366f1,#8b5cf6); color:#fff; font-weight:700; font-size:1rem; cursor:pointer;">
+      Unlock
+    </button>
+    <p id="err" style="color:#ef4444; margin-top:12px; display:none; font-size:0.9rem;">Incorrect PIN</p>
+  </div>
+</div>
+<script>
+function getCookie(n){{return(document.cookie.match(new RegExp("(?:^|;\\s*)"+n+"=([^;]*)"))||[])[1]}}
+if(getCookie("pp_auth")==="1"){{
+  document.addEventListener("DOMContentLoaded",()=>{{
+    document.getElementById("login").style.display="none";
+    document.getElementById("content").style.display="block";
+  }});
+}}
+async function unlock(){{
+  const pin=document.getElementById("pin").value;
+  try{{
+    const res=await fetch("/api/login",{{method:"POST",headers:{{"Content-Type":"application/json"}},body:JSON.stringify({{pin}})}});
+    if(res.ok){{
+      document.getElementById("login").style.display="none";
+      document.getElementById("content").style.display="block";
+    }}else{{
+      document.getElementById("err").style.display="block";
+      document.getElementById("pin").value="";
+      document.getElementById("pin").focus();
+    }}
+  }}catch(e){{
+    // Offline or local file — just show content
+    document.getElementById("login").style.display="none";
+    document.getElementById("content").style.display="block";
+  }}
+}}
+</script>
+
+</body>
+</html>
