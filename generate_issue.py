@@ -948,19 +948,72 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
           </div>
         </div>'''
 
-    # Portfolio allocation donut chart
-    donut_colors = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#14b8a6"]
-    donut_slices = [(pos["symbol"], pos["value"], donut_colors[i % len(donut_colors)]) for i, pos in enumerate(p["positions"])]
+    # Allocation — stacked bar + grouped breakdown
+    alloc_colors = ["#6366f1", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b", "#f97316", "#ec4899", "#14b8a6"]
+    alloc_items = [(pos["symbol"], pos["value"], pos["name"], pos.get("gain", 0), alloc_colors[i % len(alloc_colors)]) for i, pos in enumerate(p["positions"])]
     if p["cash"] > 0:
-        donut_slices.append(("Cash", p["cash"], "#4b5563"))
-    donut_chart = svg_donut(donut_slices, size=220)
+        alloc_items.append(("Cash", p["cash"], "Money Market (SWVXX)", 0, "#4b5563"))
+    if p.get("cd", 0) > 0:
+        alloc_items.append(("CD", p["cd"], "Fixed Income", 0, "#374151"))
 
-    # Donut legend
-    donut_legend = ""
-    total_for_pct = sum(v for _, v, _ in donut_slices)
-    for label, value, clr in donut_slices:
-        pct = value / total_for_pct * 100 if total_for_pct else 0
-        donut_legend += f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div style="width:12px;height:12px;border-radius:3px;background:{clr};flex-shrink:0;"></div><span style="color:#9ca3af;font-size:0.85rem;">{label}</span><span style="color:#e5e5e5;font-weight:600;margin-left:auto;">{pct:.0f}%</span></div>'
+    total_alloc = sum(v for _, v, _, _, _ in alloc_items)
+
+    # Stacked bar segments
+    alloc_bar_segments = ""
+    for sym, val, name, gain, clr in alloc_items:
+        pct = val / total_alloc * 100 if total_alloc else 0
+        if pct >= 3:
+            alloc_bar_segments += f'<div style="width:{pct}%; background:{clr}; display:flex; align-items:center; justify-content:center; font-size:0.6rem; color:#fff; font-weight:700; letter-spacing:0.5px; transition:opacity 0.2s;" title="{sym}: {pct:.1f}%">{sym}</div>'
+        else:
+            alloc_bar_segments += f'<div style="width:{pct}%; background:{clr};" title="{sym}: {pct:.1f}%"></div>'
+
+    # Group by asset class for the breakdown
+    groups = {
+        "US Equities": [],
+        "International": [],
+        "Gold / Commodities": [],
+        "Cash & Fixed Income": [],
+    }
+    for sym, val, name, gain, clr in alloc_items:
+        if sym in ("GLD", "IAU"):
+            groups["Gold / Commodities"].append((sym, val, name, gain, clr))
+        elif sym in ("EFV",):
+            groups["International"].append((sym, val, name, gain, clr))
+        elif sym in ("Cash", "CD"):
+            groups["Cash & Fixed Income"].append((sym, val, name, gain, clr))
+        else:
+            groups["US Equities"].append((sym, val, name, gain, clr))
+
+    alloc_groups_html = '<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:16px; margin-top:4px;">'
+    for group_name, items in groups.items():
+        if not items:
+            continue
+        group_total = sum(v for _, v, _, _, _ in items)
+        group_pct = group_total / total_alloc * 100 if total_alloc else 0
+
+        rows = ""
+        for sym, val, name, gain, clr in items:
+            pct = val / total_alloc * 100 if total_alloc else 0
+            gain_color = "#10b981" if gain >= 0 else "#ef4444"
+            gain_str = f'<span style="color:{gain_color}; font-size:0.75rem;">{"+" if gain >= 0 else ""}${gain:,.0f}</span>' if gain != 0 else ""
+            rows += f'''<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+              <div style="width:8px; height:8px; border-radius:2px; background:{clr}; flex-shrink:0;"></div>
+              <span style="color:#d1d5db; font-size:0.85rem; font-weight:600; width:45px;">{sym}</span>
+              <span style="color:#6b7280; font-size:0.75rem; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{name}</span>
+              <span style="color:#e5e5e5; font-size:0.85rem; font-weight:600;">{pct:.0f}%</span>
+            </div>'''
+
+        alloc_groups_html += f'''<div style="background:rgba(255,255,255,0.02); border-radius:12px; padding:16px; border:1px solid rgba(255,255,255,0.04);">
+          <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;">
+            <span style="color:#9ca3af; font-size:0.7rem; font-weight:600; text-transform:uppercase; letter-spacing:2px;">{group_name}</span>
+            <span style="font-family:'Fraunces',serif; color:#fff; font-size:1.1rem; font-weight:800;">{group_pct:.0f}%</span>
+          </div>
+          <div style="height:4px; background:rgba(255,255,255,0.06); border-radius:2px; margin-bottom:10px; overflow:hidden;">
+            <div style="height:100%; width:{group_pct}%; background:{items[0][4]}; border-radius:2px;"></div>
+          </div>
+          {rows}
+        </div>'''
+    alloc_groups_html += '</div>'
 
     # Opportunities HTML — editorial numbered cards
     opps_html = ""
@@ -1696,9 +1749,9 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
   <div class="inner">
     <div class="section-label">Allocation</div>
     <h2 class="section-title serif">Where your money is</h2>
-    <div style="display:flex; gap:40px; align-items:center; justify-content:center; flex-wrap:wrap;">
-      <div style="flex-shrink:0;">{donut_chart}</div>
-      <div style="min-width:180px;">{donut_legend}</div>
+    <div style="margin-top:24px;">
+      <div style="display:flex; height:28px; border-radius:8px; overflow:hidden; margin-bottom:20px;">{alloc_bar_segments}</div>
+      {alloc_groups_html}
     </div>
   </div>
 </div>
