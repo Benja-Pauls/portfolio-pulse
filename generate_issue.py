@@ -491,13 +491,13 @@ def parse_opus_output(text, data=None):
     return analysis_html, opps_html, conclusion_html
 
 
-def svg_sparkline(prices, width=130, height=36):
-    """Generate a clean inline SVG sparkline — just the line chart, no text."""
+def svg_sparkline(prices, width=300, height=50):
+    """Generate a clean inline SVG sparkline that scales to full container width."""
     if not prices or len(prices) < 2:
         return ""
     mn, mx = min(prices), max(prices)
     rng = mx - mn if mx != mn else 1
-    pad = 2
+    pad = 3
     points = []
     for i, p in enumerate(prices):
         x = pad + i / (len(prices) - 1) * (width - pad * 2)
@@ -508,14 +508,14 @@ def svg_sparkline(prices, width=130, height=36):
     trend_color = "#10b981" if prices[-1] >= prices[0] else "#ef4444"
     uid = abs(hash(tuple(prices[:5]))) % 100000
 
-    return f'''<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" style="display:block;border-radius:6px;background:rgba(255,255,255,0.02);">
+    return f'''<svg viewBox="0 0 {width} {height}" preserveAspectRatio="none" style="display:block; width:100%; height:50px; border-radius:8px; background:rgba(255,255,255,0.015);">
   <defs><linearGradient id="sg{uid}" x1="0" y1="0" x2="0" y2="1">
     <stop offset="0%" stop-color="{trend_color}" stop-opacity="0.2"/>
     <stop offset="100%" stop-color="{trend_color}" stop-opacity="0.02"/>
   </linearGradient></defs>
   <polygon points="{' '.join(fill_points)}" fill="url(#sg{uid})"/>
-  <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="3" fill="{trend_color}"/>
+  <polyline points="{' '.join(points)}" fill="none" stroke="{trend_color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+  <circle cx="{points[-1].split(',')[0]}" cy="{points[-1].split(',')[1]}" r="3" fill="{trend_color}" vector-effect="non-scaling-stroke"/>
 </svg>'''
 
 
@@ -903,38 +903,46 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
         sparkline = sparkline_wrapper(pos.get("sparkline", []), label="30D")
         card_bg = "linear-gradient(135deg, rgba(16,185,129,0.06) 0%, rgba(16,185,129,0.02) 100%)" if pos["gain"] >= 0 else "linear-gradient(135deg, rgba(239,68,68,0.06) 0%, rgba(239,68,68,0.02) 100%)"
 
+        # Full-width sparkline SVG for the card
+        spark_prices = pos.get("sparkline", [])
+        spark_svg = svg_sparkline(spark_prices, width=280, height=50) if spark_prices else ""
+        spark_pct = ((spark_prices[-1] / spark_prices[0] - 1) * 100) if spark_prices and len(spark_prices) > 1 else 0
+        spark_color = "#10b981" if spark_pct >= 0 else "#ef4444"
+
         pos_cards += f'''
         <div class="pos-card" style="background: {card_bg};">
-          <div class="pos-card-header">
-            <div class="pos-card-symbol-group">
-              <span style="display:inline-flex; align-items:center; gap:6px;"><span style="width:8px; height:8px; border-radius:50%; background:{gain_color};"></span><span class="pos-card-symbol">{pos["symbol"]}</span></span>
-              <span class="pos-card-name">{pos["name"]}</span>
-            </div>
-            <div class="pos-card-day" style="color: {color};">{"+" if pos["day_chg"] >= 0 else ""}{pos["day_chg"]:.1f}%</div>
-          </div>
-          <div class="pos-card-body">
-            <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-              <div>
-                <div class="pos-card-price">${pos["price"]:.2f}</div>
-                <div class="pos-card-pnl" style="color: {gain_color};">
-                  <span class="pos-card-pnl-amount">{"+" if pos["gain"] >= 0 else ""}${pos["gain"]:,.0f}</span>
-                  <span class="pos-card-pnl-pct">{"+" if pos["gain_pct"] >= 0 else ""}{pos["gain_pct"]:.1f}%</span>
-                </div>
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+            <div>
+              <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px;">
+                <span style="width:8px; height:8px; border-radius:50%; background:{gain_color}; flex-shrink:0;"></span>
+                <span class="pos-card-symbol">{pos["symbol"]}</span>
+                <span style="color:{color}; font-size:0.8rem; font-weight:700;">{"+" if pos["day_chg"] >= 0 else ""}{pos["day_chg"]:.1f}%</span>
               </div>
-              <div style="opacity:0.9;">{sparkline}</div>
+              <div style="color:#6b7280; font-size:0.75rem; padding-left:16px;">{pos["name"]}</div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:1.1rem; font-weight:600; color:#d1d5db;">${pos["price"]:.2f}</div>
+              <div style="color:{gain_color}; font-family:'Fraunces',serif; font-size:1.2rem; font-weight:800;">{"+" if pos["gain"] >= 0 else ""}${pos["gain"]:,.0f}</div>
             </div>
           </div>
-          <div class="pos-card-footer">
-            <div class="pos-card-rsi">
-              <span class="pos-card-rsi-label">RSI</span>
-              <span class="pos-card-rsi-value" style="color: {rsi_color};">{pos["rsi"]:.0f}</span>
+          <div style="margin:0 -4px 12px; position:relative;">
+            {spark_svg}
+            <div style="display:flex; justify-content:space-between; padding:4px 4px 0; align-items:center;">
+              <span style="color:#4b5563; font-size:0.6rem; letter-spacing:1px; font-weight:600;">30 DAYS</span>
+              <span style="color:{spark_color}; font-size:0.65rem; font-weight:700;">{"+" if spark_pct >= 0 else ""}{spark_pct:.1f}%</span>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; padding-top:10px; border-top:1px solid rgba(255,255,255,0.04);">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="color:#4b5563; font-size:0.65rem; font-weight:600; letter-spacing:1px;">RSI</span>
+              <span style="color:{rsi_color}; font-weight:700; font-size:0.85rem;">{pos["rsi"]:.0f}</span>
               {rsi_label}
             </div>
-            <div class="pos-card-range-bar" title="52W Range: ${pos.get('low_52w', 0):.0f} — ${pos.get('high_52w', 0):.0f}">
-              <span style="color:#6b7280;font-size:0.65rem;">52W</span>
-              <div class="range-track">
-                <div class="range-fill" style="width: {range_pct}%; background: linear-gradient(90deg, #ef4444, #eab308, #10b981);"></div>
-                <div style="position:absolute; left:{range_pct}%; top:-2px; width:8px; height:12px; background:#fff; border-radius:2px; transform:translateX(-50%);"></div>
+            <div style="display:flex; align-items:center; gap:6px; flex:1; max-width:140px; margin-left:12px;">
+              <span style="color:#4b5563; font-size:0.6rem; font-weight:600; letter-spacing:0.5px;">52W</span>
+              <div style="flex:1; height:5px; background:rgba(255,255,255,0.06); border-radius:3px; position:relative; overflow:visible;">
+                <div style="height:100%; width:{range_pct}%; background:linear-gradient(90deg, #ef4444, #eab308, #10b981); border-radius:3px;"></div>
+                <div style="position:absolute; left:{range_pct}%; top:50%; width:9px; height:9px; background:#fff; border-radius:50%; transform:translate(-50%,-50%); box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>
               </div>
             </div>
           </div>
