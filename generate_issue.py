@@ -24,6 +24,7 @@ sys.path.insert(0, str(STOCK_DIR))
 from dotenv import load_dotenv
 load_dotenv(STOCK_DIR / ".env")
 
+import requests
 import yfinance as yf
 import numpy as np
 
@@ -93,6 +94,11 @@ def generate_opus_analysis(data):
             for o in data.get("opportunities", [])
         ) or "None detected"
 
+        predictions_summary = "\n".join(
+            f"- {pred['title']}: {pred['probability']:.0f}% Yes (${pred['volume']:,.0f} volume)"
+            for pred in data.get("predictions", [])
+        ) or "No prediction market data available"
+
         fg = m.get("fear_greed", {})
         sp = m.get("sp500", {})
         vix = m.get("vix", {})
@@ -152,6 +158,9 @@ MARKET:
 MACRO:
 - Yield Curve (10Y-2Y): {macro['spread']:+.2f}% ({'Normal' if macro['spread'] > 0 else 'INVERTED'})
 - 10Y Treasury: {macro['t10']:.2f}%
+
+PREDICTION MARKETS (from Polymarket — real money probabilities):
+{predictions_summary}
 
 BOTTOMING OPPORTUNITIES DETECTED:
 {opps_summary}
@@ -752,7 +761,88 @@ def gather_data():
     opportunities.sort(key=lambda x: x["position"])
     data["opportunities"] = opportunities[:5]
 
+    # Prediction markets from Polymarket
+    predictions = []
+    try:
+        resp = requests.get(
+            "https://gamma-api.polymarket.com/events?active=true&closed=false&limit=100&order=volume&ascending=false",
+            timeout=15,
+        )
+        if resp.ok:
+            keywords = ["fed", "rate", "recession", "iran", "oil", "bitcoin", "ai",
+                        "openai", "anthropic", "microsoft", "tariff", "inflation",
+                        "ceasefire", "china", "taiwan", "ipo"]
+            for event in resp.json():
+                title = event.get("title", "")
+                if not any(kw in title.lower() for kw in keywords):
+                    continue
+                markets = event.get("markets", [])
+                if not markets:
+                    continue
+                top_market = markets[0]
+                try:
+                    outcome_prices = json.loads(top_market.get("outcomePrices", "[]"))
+                    yes_prob = float(outcome_prices[0]) * 100 if outcome_prices else 0
+                except (json.JSONDecodeError, IndexError, ValueError):
+                    continue
+                volume = float(top_market.get("volume", 0) or 0)
+                predictions.append({
+                    "title": top_market.get("question", title),
+                    "probability": round(yes_prob, 1),
+                    "volume": volume,
+                })
+            predictions.sort(key=lambda x: -x["volume"])
+            predictions = predictions[:12]
+    except Exception as e:
+        print(f"Polymarket fetch error: {e}")
+    data["predictions"] = predictions
+
     return data
+
+
+def _render_predictions(predictions):
+    """Render Polymarket prediction markets as a styled HTML section."""
+    if not predictions:
+        return ""
+
+    cards = ""
+    for pred in predictions:
+        prob = pred["probability"]
+        vol = pred["volume"]
+        # Color gradient: red (<30%) -> yellow (30-60%) -> green (>60%)
+        if prob < 30:
+            bar_color = "linear-gradient(90deg, #ef4444, #f97316)"
+        elif prob < 60:
+            bar_color = "linear-gradient(90deg, #f97316, #eab308)"
+        else:
+            bar_color = "linear-gradient(90deg, #22c55e, #10b981)"
+
+        vol_str = f"${vol:,.0f}" if vol >= 1000 else f"${vol:.0f}"
+
+        cards += f'''
+        <div style="background:rgba(139,92,246,0.06); border:1px solid rgba(139,92,246,0.15); border-radius:14px; padding:20px 24px; margin-bottom:14px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:12px;">
+            <div style="color:#e0e7ff; font-size:0.95rem; line-height:1.5; flex:1;">{pred["title"]}</div>
+            <div style="font-family:'Fraunces',serif; font-size:1.6rem; font-weight:900; color:#fff; flex-shrink:0; min-width:65px; text-align:right;">{prob:.0f}%</div>
+          </div>
+          <div style="height:8px; background:rgba(255,255,255,0.06); border-radius:4px; overflow:hidden; margin-bottom:8px;">
+            <div style="height:100%; width:{prob}%; background:{bar_color}; border-radius:4px; transition:width 0.3s;"></div>
+          </div>
+          <div style="color:#6b7280; font-size:0.7rem; letter-spacing:0.5px;">{vol_str} volume</div>
+        </div>'''
+
+    return f'''
+<div style="background:linear-gradient(135deg, #1a1025, #1e1145); padding:72px 24px; border-top:1px solid rgba(139,92,246,0.2); border-bottom:1px solid rgba(139,92,246,0.2);" class="fade-section">
+  <div style="max-width:920px; margin:0 auto;">
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+      <div style="color:#8b5cf6; text-transform:uppercase; letter-spacing:6px; font-weight:700; font-size:0.75rem; margin-bottom:0;">\U0001f52e PREDICTION MARKETS</div>
+      <div style="height:1px; flex:1; background:linear-gradient(90deg, rgba(139,92,246,0.4), transparent);"></div>
+    </div>
+    <h2 style="font-family:'Fraunces',serif; font-size:clamp(1.8rem,5vw,2.8rem); font-weight:900; margin-bottom:12px; line-height:1.1; color:#fff;">What the money says</h2>
+    <p style="color:#a78bfa; font-size:0.85rem; margin-bottom:28px; letter-spacing:1px;">REAL-MONEY PROBABILITIES FROM POLYMARKET</p>
+    {cards}
+  </div>
+</div>'''
 
 
 def render_html(data, analysis_text=None, password=None, opus_html=None, opus_opps_html=None, opus_conclusion_html=None):
@@ -1781,6 +1871,9 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
     {analysis_html}
   </div>
 </div>
+
+<!-- PREDICTION MARKETS -->
+{_render_predictions(data.get("predictions", []))}
 
 <!-- OPPORTUNITIES -->
 <div class="green-section fade-section">
