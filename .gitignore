@@ -7,3 +7,8 @@ public/
 .vercel/
 node_modules/
 .vercel
+
+# Generated daily issues — contain full portfolio data, never commit
+/index.html
+/2*.html
+data/
