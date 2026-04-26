@@ -63,443 +63,6 @@ async function unlock() {
 }
 """
 
-# ---------------------------------------------------------------------------
-# Claude Opus Analysis
-# ---------------------------------------------------------------------------
-
-def generate_opus_analysis(data):
-    """Call Claude Opus to generate substantive investment analysis."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        return None
-
-    try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-
-        # Build context from gathered data
-        p = data["portfolio"]
-        m = data["market"]
-        macro = data["macro"]
-
-        positions_summary = "\n".join(
-            f"- {pos['symbol']} ({pos['name']}): ${pos['price']:.2f}, day {pos['day_chg']:+.1f}%, "
-            f"total P&L {pos['gain']:+,.0f} ({pos['gain_pct']:+.1f}%), RSI {pos['rsi']:.0f}"
-            for pos in p["positions"]
-        )
-
-        opps_summary = "\n".join(
-            f"- {o['symbol']}: ${o['price']:.0f}, {o['from_high']:+.0f}% from 52W high, RSI {o['rsi']:.0f}, "
-            f"at {o['position']:.0f}% of range"
-            for o in data.get("opportunities", [])
-        ) or "None detected"
-
-        predictions_summary = "\n".join(
-            f"- {pred['title']}: {pred['probability']:.0f}% Yes (${pred['volume']:,.0f} volume)"
-            for pred in data.get("predictions", [])
-        ) or "No prediction market data available"
-
-        fg = m.get("fear_greed", {})
-        sp = m.get("sp500", {})
-        vix = m.get("vix", {})
-
-        # Load CLI context and principles for the model
-        cli_context = ""
-        principles_context = ""
-        try:
-            claude_md = STOCK_DIR / "CLAUDE.md"
-            if claude_md.exists():
-                cli_context = claude_md.read_text()[:3000]  # first 3K chars
-            principles_md = STOCK_DIR / "PRINCIPLES.md"
-            if principles_md.exists():
-                principles_context = principles_md.read_text()[:3000]
-        except Exception:
-            pass
-
-        prompt = f"""You are a senior portfolio analyst writing a daily editorial briefing for a magazine called Portfolio Pulse.
-The reader is a self-directed investor named Ben, ~$300K portfolio, Wisconsin single filer.
-Be direct and opinionated — no disclaimers, no hedging.
-
-INVESTMENT FRAMEWORK (follow these principles):
-{principles_context[:2000] if principles_context else "Use Buffett/Munger/Dalio principles. Be greedy when others are fearful. Never sell on a single signal. Patience is the default."}
-
-TAX CONTEXT:
-- Federal bracket: 24% (single, $100-200K income)
-- Wisconsin state: 6.27% (with 30% exclusion on long-term gains)
-- SHORT-TERM total rate: 30.3% (positions held < 1 year)
-- LONG-TERM total rate: 19.4% (positions held > 1 year)
-- All Dec 2025 positions become long-term in Dec 2026 (237 days)
-- ISRG and MSFT bought Apr 2026 become long-term Apr 2027
-- Tax-loss harvesting is worth MORE now at the short-term rate
-- Selling a winner before Dec 2026 costs 10.9% extra in taxes vs waiting
-
-AVAILABLE CLI TOOLS (you have access to 60+ commands including):
-- recession-check: 10 weighted indicators for recession probability
-- detect-bottoms: early bottoming signal detection (RSI cross, MACD, volume spikes)
-- pre-buy: mandatory due diligence (insider check, analyst consensus, fundamentals)
-- insider: SEC EDGAR Form 4 filings (buy/sell/price/value)
-- whales: 13F institutional tracking (Buffett, Soros, Druckenmiller holdings)
-- congress: House STOCK Act disclosures
-- technicals: RSI, SMA 50/200, MACD, Bollinger Bands
-- backtest-fear: historical returns from buying during extreme fear (75% win rate)
-
-TODAY'S DATA:
-
-PORTFOLIO (${p['total_value']:,.0f} total, {p['day_change_pct']:+.2f}% today):
-{positions_summary}
-Cash: ${p['cash']:,.0f}
-
-MARKET:
-- S&P 500: {sp.get('price', 0):,.0f} ({sp.get('change', 0):+.2f}%)
-- VIX: {vix.get('price', 0):.1f}
-- Fear & Greed: {fg.get('value', 50):.0f} ({fg.get('label', 'neutral')})
-- Oil: ${m.get('oil', {}).get('price', 0):.0f}
-
-MACRO:
-- Yield Curve (10Y-2Y): {macro['spread']:+.2f}% ({'Normal' if macro['spread'] > 0 else 'INVERTED'})
-- 10Y Treasury: {macro['t10']:.2f}%
-
-PREDICTION MARKETS (from Polymarket — real money probabilities):
-{predictions_summary}
-
-BOTTOMING OPPORTUNITIES DETECTED:
-{opps_summary}
-
-KEY CONTEXT:
-- All positions bought Dec 2025 — SHORT-TERM until Dec 2026 (30.3% tax rate)
-- ISRG and MSFT bought Apr 2026 — SHORT-TERM until Apr 2027
-- ISRG earnings April 21, MSFT earnings April 29
-- IVV and OEF are 98.7% correlated (consolidation candidate)
-- GLD and IAU are identical exposure (consolidate after Dec 2026 for long-term tax rate)
-
-You will generate TWO sections. Use this exact format:
-
-===ANALYSIS===
-
-Write 5-7 analysis cards. For EACH card, use this format:
-
-CARD:
-ICON: [one emoji that fits the topic]
-LABEL: [short category like "POSITION ALERT" or "MARKET SIGNAL" or "EARNINGS PREVIEW" or "TAX STRATEGY" or "OPPORTUNITY" or "RISK WARNING"]
-TITLE: [bold editorial headline — be punchy, like a newspaper]
-BODY: [3-5 sentences of substantive analysis. Explain WHAT happened, WHY it matters, and WHAT TO DO. Reference specific prices, percentages, and dates. Compare to historical precedents when relevant.]
-SOURCES: [list 1-3 data sources that informed this analysis, e.g. "RSI technical indicator", "SEC EDGAR Form 4 filings", "FRED yield curve data", "Fear & Greed Index", "52-week range analysis", "Analyst consensus (Finnhub)", "Congressional trading data"]
-
-===OPPORTUNITIES===
-
-For each bottoming opportunity detected, write a brief analysis:
-
-OPP:
-SYMBOL: [ticker]
-HEADLINE: [one-line punchy take]
-ANALYSIS: [2-3 sentences: why it dropped, whether the drop is justified, what would need to happen for a recovery, and whether you'd buy it]
-VERDICT: [BUY / WATCH / AVOID]
-SOURCES: [1-2 data sources]
-
-===CONCLUSION===
-
-Write 2-3 sentences summarizing today's overall market posture and portfolio health. Start with "SUMMARY:" followed by the text.
-
-===ACTIONS===
-
-For EVERY position in the portfolio, write one line with a specific recommendation.
-Then add any NEW positions worth opening based on the opportunities detected.
-
-Use this exact format for each:
-
-ACTION:
-SYMBOL: [ticker]
-NAME: [company/fund name]
-TYPE: [HOLD / BUY / SELL / TRIM / ADD / WATCH]
-DETAIL: [specific instruction with tax awareness. Examples:
-  "Hold through Dec 2026 — selling now triggers 30.3% short-term tax vs 19.4% if you wait 237 more days. The $1,088 tax savings outweighs the overbought RSI."
-  "Tax-harvest NOW — the $1,200 loss saves $363 at the 30.3% short-term rate. Swap into VTI to maintain exposure."
-  "New position: buy 30 shares at $45 limit — 42% below high, 4/4 bottoming signals, RSI 30. Fills healthcare gap in portfolio."
-  "Hold — Buffett principle: don't sell winners just because they're overbought. RSI 74 is elevated but not extreme."]
-URGENCY: [NOW / SOON / WAIT / NO ACTION]
-
-Include ALL current holdings (IVV, OEF, GLD, IAU, EFV, BAI, ISRG, MSFT) plus Cash.
-Then add 1-3 new opportunities from the bottoming signals if any merit action.
-ALWAYS factor in tax implications when recommending sells or trims.
-Reference which CLI tools or data sources informed each recommendation.
-
-RULES:
-- Be specific: use numbers, dates, percentages, share counts, dollar amounts
-- Be opinionated: say "sell", "hold", "buy", "avoid" — don't hedge
-- Reference the data sources for credibility
-- Think like a hedge fund analyst, write like a journalist
-- Every card must be ACTIONABLE — the reader should know what to DO after reading it
-- For the ACTIONS table, give a specific recommendation for EVERY holding, not just the interesting ones"""
-
-        response = client.messages.create(
-            model="claude-opus-4-6",
-            max_tokens=4000,
-            messages=[{"role": "user", "content": prompt}],
-        )
-
-        return response.content[0].text
-    except Exception as e:
-        import traceback
-        print(f"Claude API error: {e}")
-        traceback.print_exc()
-        return None
-
-
-def parse_opus_output(text, data=None):
-    """Parse Claude's rich response into analysis HTML, opportunities HTML, and conclusion HTML."""
-    if not text:
-        return "", "", ""
-    if data is None:
-        data = {}
-
-    # Split into sections
-    analysis_section = ""
-    opps_section = ""
-    conclusion_section = ""
-
-    parts = text.split("===")
-    current_section = None
-    section_contents = {"ANALYSIS": "", "OPPORTUNITIES": "", "CONCLUSION": "", "ACTIONS": ""}
-
-    for part in parts:
-        part = part.strip()
-        if part.upper().startswith("ANALYSIS"):
-            current_section = "ANALYSIS"
-            section_contents["ANALYSIS"] = part[len("ANALYSIS"):].strip()
-        elif part.upper().startswith("OPPORTUNITIES"):
-            current_section = "OPPORTUNITIES"
-            section_contents["OPPORTUNITIES"] = part[len("OPPORTUNITIES"):].strip()
-        elif part.upper().startswith("CONCLUSION"):
-            current_section = "CONCLUSION"
-            section_contents["CONCLUSION"] = part[len("CONCLUSION"):].strip()
-        elif part.upper().startswith("ACTIONS"):
-            current_section = "ACTIONS"
-            section_contents["ACTIONS"] = part[len("ACTIONS"):].strip()
-        elif current_section:
-            section_contents[current_section] += "\n" + part
-
-    # Parse analysis cards
-    label_colors = {
-        "POSITION ALERT": "#f59e0b",
-        "MARKET SIGNAL": "#6366f1",
-        "EARNINGS PREVIEW": "#8b5cf6",
-        "TAX STRATEGY": "#06b6d4",
-        "OPPORTUNITY": "#10b981",
-        "RISK WARNING": "#ef4444",
-        "MACRO": "#3b82f6",
-        "PORTFOLIO": "#ec4899",
-    }
-
-    cards_text = section_contents.get("ANALYSIS", "")
-    card_blocks = cards_text.split("CARD:")
-    analysis_html = ""
-
-    for block in card_blocks:
-        block = block.strip()
-        if not block:
-            continue
-
-        # Parse fields
-        icon = ""
-        label = ""
-        title = ""
-        body = ""
-        sources = ""
-
-        for line in block.split("\n"):
-            line = line.strip().lstrip("*").rstrip("*").strip()
-            if line.upper().startswith("ICON:"):
-                icon = line[5:].strip()
-            elif line.upper().startswith("LABEL:"):
-                label = line[6:].strip().strip('"').strip("*")
-            elif line.upper().startswith("TITLE:"):
-                title = line[6:].strip().strip('"').strip("*")
-            elif line.upper().startswith("BODY:"):
-                body = line[5:].strip()
-            elif line.upper().startswith("SOURCES:"):
-                sources = line[8:].strip()
-            elif body and not line.upper().startswith(("CARD", "ICON", "LABEL", "TITLE", "SOURCES", "===")):
-                body += " " + line
-
-        if not title:
-            continue
-
-        color = "#6366f1"
-        for key, clr in label_colors.items():
-            if key.lower() in label.lower():
-                color = clr
-                break
-
-        # Format sources as tags
-        sources_html = ""
-        if sources:
-            source_list = [s.strip().strip('"').strip("'") for s in sources.split(",")]
-            sources_html = '<div style="margin-top:14px; display:flex; flex-wrap:wrap; gap:6px;">'
-            for src in source_list[:4]:
-                if src:
-                    sources_html += f'<span style="background:rgba(255,255,255,0.06); color:#6b7280; font-size:0.7rem; padding:3px 8px; border-radius:4px; letter-spacing:0.5px;">{src.strip()}</span>'
-            sources_html += '</div>'
-
-        label_html = f'<div style="display:inline-flex; align-items:center; gap:6px; background:{color}20; color:{color}; font-size:0.7rem; font-weight:700; padding:4px 10px; border-radius:4px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:10px;">{icon} {label}</div>' if label else ""
-
-        analysis_html += f'''
-        <div style="background:linear-gradient(135deg, rgba(26,26,46,0.8), rgba(26,26,46,0.4)); border-radius:16px; padding:28px; margin-bottom:20px; border-left:4px solid {color}; backdrop-filter:blur(10px);">
-          {label_html}
-          <h3 style="font-family:'Fraunces',serif; font-size:1.25rem; font-weight:800; color:#fff; margin-bottom:12px; line-height:1.3;">{title}</h3>
-          <p style="color:#b0b8c8; line-height:1.8; font-size:1.05rem;">{body}</p>
-          {sources_html}
-        </div>'''
-
-    # Parse opportunities
-    opps_text = section_contents.get("OPPORTUNITIES", "")
-    opp_blocks = opps_text.split("OPP:")
-    opps_html = ""
-
-    verdict_colors = {"BUY": "#10b981", "WATCH": "#f59e0b", "AVOID": "#ef4444"}
-
-    for i, block in enumerate(opp_blocks, 1):
-        block = block.strip()
-        if not block:
-            continue
-
-        symbol = headline = analysis = verdict = sources = ""
-        for line in block.split("\n"):
-            line = line.strip().lstrip("*").rstrip("*").strip()
-            if line.upper().startswith("SYMBOL:"):
-                symbol = line[7:].strip()
-            elif line.upper().startswith("HEADLINE:"):
-                headline = line[9:].strip().strip('"').strip("*")
-            elif line.upper().startswith("ANALYSIS:"):
-                analysis = line[9:].strip()
-            elif line.upper().startswith("VERDICT:"):
-                verdict = line[8:].strip().upper().strip("*")
-            elif line.upper().startswith("SOURCES:"):
-                sources = line[8:].strip()
-            elif analysis and not line.upper().startswith(("OPP", "SYMBOL", "HEADLINE", "VERDICT", "SOURCES", "===")):
-                analysis += " " + line
-
-        if not symbol:
-            continue
-
-        v_color = verdict_colors.get(verdict, "#6b7280")
-        # Find matching opp data for range bar
-        opp_data = next((o for o in data.get("opportunities", []) if o["symbol"] == symbol), None)
-        range_w = opp_data["position"] if opp_data else 20
-        from_high = opp_data["from_high"] if opp_data else -30
-        rsi = opp_data["rsi"] if opp_data else 35
-        price = opp_data["price"] if opp_data else 0
-
-        sources_html = ""
-        if sources:
-            source_list = [s.strip().strip('"') for s in sources.split(",")]
-            sources_html = '<div style="margin-top:10px; display:flex; flex-wrap:wrap; gap:6px;">'
-            for src in source_list[:3]:
-                if src:
-                    sources_html += f'<span style="background:rgba(255,255,255,0.06); color:#6b7280; font-size:0.65rem; padding:2px 7px; border-radius:3px;">{src.strip()}</span>'
-            sources_html += '</div>'
-
-        opps_html += f'''
-        <div style="display:flex; gap:20px; align-items:stretch; margin-bottom:20px; background:linear-gradient(135deg, rgba(16,185,129,0.04), rgba(16,185,129,0.01)); border:1px solid rgba(16,185,129,0.15); border-radius:16px; padding:24px; position:relative; overflow:hidden;">
-          <div style="font-family:'Fraunces',serif; font-size:3.5rem; font-weight:900; color:rgba(16,185,129,0.15); line-height:1; flex-shrink:0; width:45px; text-align:center;">{i}</div>
-          <div style="flex:1; min-width:0;">
-            <div style="display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
-              <div style="font-family:'Fraunces',serif; font-size:1.4rem; font-weight:900; color:#fff;">{symbol} <span style="color:#6b7280; font-size:0.85rem; font-weight:400;">${price:.0f}</span></div>
-              <div style="display:inline-flex; align-items:center; gap:4px; background:{v_color}20; color:{v_color}; font-size:0.7rem; font-weight:800; padding:4px 10px; border-radius:4px; letter-spacing:1px;">{verdict}</div>
-            </div>
-            <div style="font-weight:600; color:#d1d5db; font-size:0.95rem; margin-bottom:8px;">{headline}</div>
-            <p style="color:#9ca3af; line-height:1.7; font-size:0.9rem;">{analysis}</p>
-            <div style="margin-top:12px; display:flex; gap:16px; flex-wrap:wrap; align-items:center;">
-              <span style="color:#ef4444; font-weight:700; font-size:0.85rem;">{from_high:+.0f}% from high</span>
-              <span style="color:#6b7280; font-size:0.8rem;">RSI {rsi:.0f}</span>
-              <div style="flex:1; min-width:80px; height:6px; background:rgba(255,255,255,0.06); border-radius:3px; overflow:hidden;">
-                <div style="height:100%; width:{range_w}%; background:linear-gradient(90deg, #ef4444, #10b981); border-radius:3px;"></div>
-              </div>
-            </div>
-            {sources_html}
-          </div>
-        </div>'''
-
-    # Parse conclusion/summary
-    conclusion_text = section_contents.get("CONCLUSION", "").strip()
-    if conclusion_text.upper().startswith("SUMMARY:"):
-        conclusion_text = conclusion_text[8:].strip()
-    elif conclusion_text.upper().startswith("BOTTOM LINE:"):
-        conclusion_text = conclusion_text[12:].strip()
-    conclusion_text = conclusion_text.lstrip("*").rstrip("*").strip()
-
-    # Parse actions
-    actions_text = section_contents.get("ACTIONS", "")
-    action_blocks = actions_text.split("ACTION:")
-    actions_html = ""
-
-    type_config = {
-        "HOLD": ("#6b7280", "—"),
-        "BUY": ("#10b981", "▲"),
-        "ADD": ("#10b981", "+"),
-        "SELL": ("#ef4444", "▼"),
-        "TRIM": ("#f59e0b", "↓"),
-        "WATCH": ("#8b5cf6", "👁"),
-        "NO ACTION": ("#6b7280", "—"),
-    }
-
-    urgency_config = {
-        "NOW": ("#ef4444", "●"),
-        "SOON": ("#f59e0b", "●"),
-        "WAIT": ("#6b7280", "○"),
-        "NO ACTION": ("#4b5563", "○"),
-    }
-
-    for block in action_blocks:
-        block = block.strip()
-        if not block:
-            continue
-
-        symbol = name = action_type = detail = urgency = ""
-        for line in block.split("\n"):
-            line = line.strip().lstrip("*").rstrip("*").strip()
-            if line.upper().startswith("SYMBOL:"):
-                symbol = line[7:].strip().strip("*")
-            elif line.upper().startswith("NAME:"):
-                name = line[5:].strip().strip("*")
-            elif line.upper().startswith("TYPE:"):
-                action_type = line[5:].strip().upper().strip("*")
-            elif line.upper().startswith("DETAIL:"):
-                detail = line[7:].strip().strip("*")
-            elif line.upper().startswith("URGENCY:"):
-                urgency = line[8:].strip().upper().strip("*")
-            elif detail and not line.upper().startswith(("ACTION", "SYMBOL", "NAME", "TYPE", "URGENCY", "===")):
-                detail += " " + line
-
-        if not symbol:
-            continue
-
-        t_color, t_icon = type_config.get(action_type, ("#6b7280", "—"))
-        u_color, u_dot = urgency_config.get(urgency, ("#6b7280", "○"))
-
-        # Determine if this is a new position suggestion
-        is_new = action_type in ("BUY", "WATCH") and symbol not in ["IVV", "OEF", "GLD", "IAU", "EFV", "BAI", "ISRG", "MSFT"]
-        new_badge = '<span style="background:#10b981; color:#fff; font-size:0.6rem; padding:2px 6px; border-radius:3px; margin-left:6px; font-weight:700; letter-spacing:1px;">NEW</span>' if is_new else ""
-
-        actions_html += f'''
-        <div style="display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.04); transition:background 0.2s;" onmouseover="this.style.background='rgba(99,102,241,0.04)'" onmouseout="this.style.background='transparent'">
-          <div style="color:{u_color}; font-size:0.7rem; flex-shrink:0; width:10px;">{u_dot}</div>
-          <div style="font-family:'Fraunces',serif; font-weight:800; color:#fff; width:55px; flex-shrink:0;">{symbol}</div>
-          <div style="display:inline-flex; align-items:center; background:{t_color}18; color:{t_color}; font-size:0.7rem; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:1px; flex-shrink:0; min-width:55px; justify-content:center;">{t_icon} {action_type}</div>
-          <div style="color:#9ca3af; font-size:0.9rem; line-height:1.4; flex:1;">{detail}{new_badge}</div>
-        </div>'''
-
-    # Build conclusion HTML
-    conclusion_html = ""
-    if conclusion_text or actions_html:
-        conclusion_html = f'''
-        <div style="margin-top:40px;">
-          {"<div style='background:linear-gradient(135deg, #1e1b4b, #312e81); border-radius:20px; padding:28px; text-align:center; border:1px solid rgba(99,102,241,0.3); margin-bottom:28px;'><div style=&quot;font-size:0.7rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700; margin-bottom:10px;&quot;>Market Summary</div><p style=&quot;font-family:Fraunces,serif; font-size:1.2rem; font-weight:700; color:#e0e7ff; line-height:1.6; max-width:700px; margin:0 auto;&quot;>" + conclusion_text + "</p></div>" if conclusion_text else ""}
-          {"<div style='background:rgba(26,26,46,0.6); border-radius:16px; border:1px solid rgba(255,255,255,0.06); overflow:hidden;'><div style=&quot;padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; gap:10px;&quot;><span style=&quot;font-size:0.7rem; color:#818cf8; text-transform:uppercase; letter-spacing:4px; font-weight:700;&quot;>Action Plan</span><div style=&quot;flex:1; height:1px; background:linear-gradient(90deg, rgba(99,102,241,0.3), transparent);&quot;></div></div>" + actions_html + "</div>" if actions_html else ""}
-        </div>'''
-
-    return analysis_html, opps_html, conclusion_html
-
-
 def svg_sparkline(prices, width=300, height=50):
     """Generate a clean inline SVG sparkline that scales to full container width."""
     if not prices or len(prices) < 2:
@@ -626,19 +189,44 @@ def gather_data():
     """Gather all market and portfolio data for the issue."""
     data = {"generated_at": datetime.now().isoformat(), "sections": {}}
 
-    # Portfolio positions
+    # Portfolio positions — fallback snapshot used if Schwab live fetch fails.
     positions = [
-        {"symbol": "IVV", "shares": 87, "cost": 47502.75, "name": "iShares S&P 500"},
-        {"symbol": "OEF", "shares": 163, "cost": 53477.99, "name": "iShares S&P 100"},
-        {"symbol": "GLD", "shares": 69, "cost": 26827.43, "name": "SPDR Gold"},
-        {"symbol": "IAU", "shares": 294, "cost": 22946.96, "name": "iShares Gold"},
-        {"symbol": "EFV", "shares": 272, "cost": 16240.28, "name": "iShares Int'l Value"},
-        {"symbol": "BAI", "shares": 288, "cost": 9886.86, "name": "iShares AI Innovation"},
-        {"symbol": "ISRG", "shares": 40, "cost": 18329.20, "name": "Intuitive Surgical"},
-        {"symbol": "MSFT", "shares": 67, "cost": 24823.50, "name": "Microsoft"},
+        {"symbol": "IVV",  "shares": 87,  "cost": 47502.75, "name": "iShares S&P 500",       "purchase_date": "2025-12-09"},
+        {"symbol": "OEF",  "shares": 163, "cost": 53477.99, "name": "iShares S&P 100",       "purchase_date": "2025-12-09"},
+        {"symbol": "GLD",  "shares": 69,  "cost": 26827.43, "name": "SPDR Gold",             "purchase_date": "2025-12-09"},
+        {"symbol": "IAU",  "shares": 294, "cost": 22946.96, "name": "iShares Gold",          "purchase_date": "2025-12-09"},
+        {"symbol": "EFV",  "shares": 272, "cost": 16240.28, "name": "iShares Int'l Value",   "purchase_date": "2025-12-09"},
+        {"symbol": "BAI",  "shares": 288, "cost": 9886.86,  "name": "iShares AI Innovation", "purchase_date": "2025-12-09"},
+        {"symbol": "ISRG", "shares": 40,  "cost": 18329.20, "name": "Intuitive Surgical",    "purchase_date": "2026-04-09"},
+        {"symbol": "MSFT", "shares": 67,  "cost": 24823.50, "name": "Microsoft",             "purchase_date": "2026-04-09"},
     ]
     cash = 43400
     cd = 24998
+    portfolio_source = "hardcoded"
+    portfolio_source_note = "snapshot — share counts and cash may be stale if any trades have happened"
+    live_liquidation_value = 0.0  # 0 → fall back to manual recomputation below
+
+    try:
+        from agent_compose import fetch_live_schwab_positions
+        live_positions, live_cash, live_cd, live_liq, live_err = fetch_live_schwab_positions()
+        if live_positions:
+            # Preserve hardcoded purchase_date as a backup if Schwab data lacks it
+            existing_dates = {p["symbol"]: p.get("purchase_date") for p in positions}
+            for lp in live_positions:
+                lp.setdefault("purchase_date", existing_dates.get(lp["symbol"]))
+            positions = live_positions
+            cash = live_cash
+            cd = live_cd  # bondValue from Schwab — captures the FIXED_INCOME CD
+            live_liquidation_value = live_liq  # ground-truth total from Schwab
+            portfolio_source = "schwab_live"
+            portfolio_source_note = f"live from Schwab API at {datetime.now().strftime('%H:%M')}"
+            print(f"  schwab live: {len(positions)} holdings, ${cash:,.0f} cash, ${cd:,.0f} cd, ${live_liq:,.0f} total")
+        else:
+            portfolio_source_note = f"snapshot — Schwab live fetch failed: {live_err}"
+            print(f"  schwab live unavailable ({live_err}) — using hardcoded snapshot")
+    except Exception as _live_err:
+        portfolio_source_note = f"snapshot — Schwab fetch raised: {_live_err}"
+        print(f"  schwab live wiring error: {_live_err} — using hardcoded snapshot")
 
     # Fetch live prices
     total_value = cash + cd
@@ -685,6 +273,12 @@ def gather_data():
     total_cost = sum(p["cost"] for p in enriched)
     day_change = sum((p["day_chg"] / 100) * p["value"] for p in enriched)
 
+    # Prefer Schwab's liquidationValue when going live — it's the same number the
+    # Schwab UI shows and includes anything we'd otherwise miss (CDs, accrued
+    # interest, etc.). Falls back to manual recomposition for the hardcoded path.
+    if live_liquidation_value > 0:
+        total_value = live_liquidation_value
+
     data["portfolio"] = {
         "total_value": total_value,
         "total_gain": total_gain,
@@ -694,6 +288,8 @@ def gather_data():
         "cash": cash,
         "cd": cd,
         "positions": sorted(enriched, key=lambda x: -x["value"]),
+        "source": portfolio_source,
+        "source_note": portfolio_source_note,
     }
 
     # Market data
@@ -760,6 +356,66 @@ def gather_data():
             continue
     opportunities.sort(key=lambda x: x["position"])
     data["opportunities"] = opportunities[:5]
+
+    # Recent earnings results (last 14 days) — these are HISTORICAL events the
+    # agent must react to, not future ones. Also flag genuinely upcoming reports.
+    finnhub_key = os.environ.get("FINNHUB_API_KEY")
+    recent_earnings = []
+    upcoming_earnings = []
+    if finnhub_key:
+        from datetime import timedelta as _td
+        today = datetime.now().date()
+        win_back = (today - _td(days=14)).isoformat()
+        win_fwd = (today + _td(days=21)).isoformat()
+        for p in positions:
+            sym = p["symbol"]
+            try:
+                cal = requests.get(
+                    "https://finnhub.io/api/v1/calendar/earnings",
+                    params={"from": win_back, "to": win_fwd, "symbol": sym, "token": finnhub_key},
+                    timeout=15,
+                ).json().get("earningsCalendar", []) or []
+            except Exception:
+                cal = []
+            for entry in cal:
+                rdate_str = entry.get("date")
+                if not rdate_str:
+                    continue
+                try:
+                    rdate = datetime.strptime(rdate_str, "%Y-%m-%d").date()
+                except ValueError:
+                    continue
+                if rdate <= today:
+                    # Find post-report price reaction from yfinance
+                    reaction = 0.0
+                    try:
+                        t = yf.Ticker(sym)
+                        h = t.history(start=rdate.isoformat(), end=(today + _td(days=1)).isoformat())
+                        if len(h) >= 2:
+                            reaction = (h["Close"].iloc[-1] / h["Close"].iloc[0] - 1) * 100
+                    except Exception:
+                        pass
+                    recent_earnings.append({
+                        "symbol": sym,
+                        "date": rdate_str,
+                        "quarter": entry.get("quarter"),
+                        "year": entry.get("year"),
+                        "actual": entry.get("epsActual"),
+                        "estimate": entry.get("epsEstimate"),
+                        "revenue_actual": entry.get("revenueActual"),
+                        "revenue_estimate": entry.get("revenueEstimate"),
+                        "surprise_pct": (
+                            (entry["epsActual"] - entry["epsEstimate"]) / abs(entry["epsEstimate"]) * 100
+                            if entry.get("epsActual") is not None
+                            and entry.get("epsEstimate") not in (None, 0)
+                            else 0.0
+                        ),
+                        "reaction_pct": reaction,
+                    })
+                else:
+                    upcoming_earnings.append({"symbol": sym, "date": rdate_str})
+    data["recent_earnings"] = recent_earnings
+    data["upcoming_earnings"] = upcoming_earnings
 
     # Prediction markets from Polymarket
     predictions = []
@@ -1923,18 +1579,26 @@ def main():
 
     print(f"Gathering market data...")
     data = gather_data()
+    if data.get("recent_earnings"):
+        print(f"  recent earnings: {[e['symbol'] for e in data['recent_earnings']]}")
 
-    print(f"Generating AI analysis with Claude Opus...")
-    opus_text = generate_opus_analysis(data)
-    opus_html = opus_opps_html = opus_conclusion_html = None
-    if opus_text:
-        opus_html, opus_opps_html, opus_conclusion_html = parse_opus_output(opus_text, data)
-        if opus_html:
-            print(f"Opus analysis generated ({len(opus_text)} chars)")
-        else:
-            print("Opus output couldn't be parsed, using auto-generated")
+    print(f"Running agent loop (Claude Opus 4.7 with tools)...")
+    from agent_compose import compose_article
+    store = compose_article(data)
+    if store.analysis_cards or store.actions:
+        opus_html, opus_opps_html, opus_conclusion_html = store.render(data.get("opportunities", []))
+        print(f"Agent produced {len(store.analysis_cards)} cards, "
+              f"{len(store.opportunities)} opps, {len(store.actions)} actions")
+        if store.finalized:
+            try:
+                from decision_journal import append_decisions, price_snapshot_from_data
+                n = append_decisions(issue_date, store, price_snapshot_from_data(data))
+                print(f"Wrote {n} decisions to journal")
+            except Exception as e:
+                print(f"Journal write failed: {e}")
     else:
-        print("Opus unavailable, using auto-generated analysis")
+        opus_html = opus_opps_html = opus_conclusion_html = None
+        print("Agent produced no output — falling back to auto-generated analysis")
 
     print(f"Rendering HTML...")
     html = render_html(data, analysis_text=args.analysis, opus_html=opus_html,
