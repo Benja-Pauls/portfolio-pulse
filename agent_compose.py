@@ -71,7 +71,50 @@ BANNED_DEFERRAL_PHRASES = (
     "more analysis needed", "we'll see", "stay tuned", "watch closely",
 )
 
+# Phrases that imply a TRADE WAS EXECUTED. The agent issues recommendations
+# only — it has no trade authority. Past-tense narrative voice about trades
+# is a hallucination that misleads the reader into thinking they (or the
+# system) acted. Always frame as "I recommended X" / "the [date] call was Y".
+BANNED_EXECUTION_PHRASES = (
+    "we bought", "we added", "we sold", "we trimmed", "we executed",
+    "today's buy executed", "today's add executed", "today's sell executed",
+    "today's trim executed", "today's buys executed", "today's adds executed",
+    "the position was trimmed", "the position was added", "the position was sold",
+    "the position was bought", "executed cleanly", "executed into",
+    "the trade went through", "the buy executed", "the sell executed",
+    "the add executed", "the trim executed", "i bought", "i added", "i sold",
+    "i trimmed", "the order filled", "filled at",
+)
+
 REQUIRED_HOLDINGS = ("IVV", "OEF", "GLD", "IAU", "EFV", "BAI", "ISRG", "MSFT", "CASH")
+
+# Validation regexes for action-row quality
+import re as _re
+_NUMERIC_QTY = _re.compile(r"\$[\d,]+(?:\.\d+)?|\d+\s*shares?\b|\d+(?:\.\d+)?\s*%")
+_TAX_DOLLAR = _re.compile(
+    r"\$[\d,]+\s*(?:tax|after.?tax)|tax.{0,15}\$[\d,]+|after.?tax.{0,15}\$[\d,]+|"
+    r"\d+(?:\.\d+)?\s*%\s*(?:tax|after.?tax)|tax.{0,15}\d+(?:\.\d+)?\s*%",
+    _re.I,
+)
+_DEPLOY_KEYWORDS = ("deploy", "buy ", "buy $", "add to ", "add $", "shift", "rotate into", "into ")
+_DEFER_KEYWORDS = (
+    "fomc", "fed ", "cpi", "jobs", "election", "earnings", "vix", "vol ",
+    "wait until", "post-", "pre-earnings", "rate decision", "fed decision",
+)
+_QUANTIFY_TYPES = {"BUY", "ADD", "SELL", "TRIM"}
+_TAX_TYPES = {"SELL", "TRIM"}
+
+# Subtle hallucination: "the April 30 add at $X" / "the May 1 buy at $Y" / "today's
+# trim at $Z" — phrasing that treats a prior RECOMMENDATION as an executed trade
+# without using the obvious phrases like "we bought". Rewrite as "the April 30
+# recommendation to add" or "the call to add on April 30".
+_HALLUCINATED_TRADE_PATTERN = _re.compile(
+    r"\bthe\s+(?:january|february|march|april|may|june|july|august|september|"
+    r"october|november|december)\s+\d{1,2}\s+(?:add|buy|trim|sell|exit|swap)\s+(?:at\s+\$|of\s+\d)|"
+    r"\b(?:today's|yesterday's)\s+(?:add|buy|trim|sell|exit)\s+(?:at\s+\$|of\s+\d)|"
+    r"\b(?:added|bought|trimmed|sold)\s+\d+\s*shares?\s+(?:at|on)",
+    _re.I,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +154,12 @@ URGENCY_CONFIG = {
     "NO ACTION": ("#4b5563", "○"),
 }
 
+CONVICTION_CONFIG = {
+    "HIGH": ("#10b981", "★★★"),
+    "MEDIUM": ("#f59e0b", "★★"),
+    "LOW": ("#6b7280", "★"),
+}
+
 
 @dataclass
 class AnalysisCard:
@@ -137,12 +186,14 @@ class PositionAction:
     type: str
     detail: str
     urgency: str
+    conviction: str = "MEDIUM"
 
 
 @dataclass
 class ArticleStore:
     hero_summary: str = ""
     market_summary: str = ""
+    portfolio_thesis: str = ""
     analysis_cards: list[AnalysisCard] = field(default_factory=list)
     opportunities: list[Opportunity] = field(default_factory=list)
     actions: list[PositionAction] = field(default_factory=list)
@@ -162,6 +213,12 @@ class ArticleStore:
         <div style="background:linear-gradient(135deg, rgba(99,102,241,0.12), rgba(236,72,153,0.06)); border-radius:20px; padding:32px 36px; margin-bottom:32px; border:1px solid rgba(99,102,241,0.25);">
           <div style="font-size:0.7rem; color:#a5b4fc; text-transform:uppercase; letter-spacing:4px; font-weight:700; margin-bottom:14px;">TODAY'S LEDE</div>
           <p style="font-family:'Fraunces',serif; font-size:1.35rem; font-weight:600; color:#f3f4f6; line-height:1.55; margin:0;">{self.hero_summary}</p>
+        </div>'''
+        if self.portfolio_thesis:
+            out += f'''
+        <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.25); border-radius:14px; padding:20px 24px; margin-bottom:28px;">
+          <div style="font-size:0.7rem; color:#34d399; text-transform:uppercase; letter-spacing:3px; font-weight:700; margin-bottom:8px;">PORTFOLIO THESIS</div>
+          <p style="color:#d1fae5; line-height:1.65; font-size:1.0rem; margin:0;">{self.portfolio_thesis}</p>
         </div>'''
         for card in self.analysis_cards:
             color = "#6366f1"
@@ -245,17 +302,24 @@ class ArticleStore:
         for a in self.actions:
             t_color, t_icon = TYPE_CONFIG.get(a.type.upper(), ("#6b7280", "—"))
             u_color, u_dot = URGENCY_CONFIG.get(a.urgency.upper(), ("#6b7280", "○"))
+            c_color, c_stars = CONVICTION_CONFIG.get(a.conviction.upper(), ("#6b7280", "★"))
             is_new = a.type.upper() in ("BUY", "WATCH") and a.symbol not in held_symbols
             new_badge = (
                 '<span style="background:#10b981; color:#fff; font-size:0.6rem; '
                 'padding:2px 6px; border-radius:3px; margin-left:6px; '
                 'font-weight:700; letter-spacing:1px;">NEW</span>' if is_new else ""
             )
+            conviction_badge = (
+                f'<div title="Conviction: {a.conviction.upper()}" '
+                f'style="color:{c_color}; font-size:0.65rem; flex-shrink:0; '
+                f'letter-spacing:1px; min-width:32px; text-align:center;">{c_stars}</div>'
+            )
             actions_html += f'''
         <div style="display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:1px solid rgba(255,255,255,0.04);">
           <div style="color:{u_color}; font-size:0.7rem; flex-shrink:0; width:10px;">{u_dot}</div>
           <div style="font-family:'Fraunces',serif; font-weight:800; color:#fff; width:55px; flex-shrink:0;">{a.symbol}</div>
           <div style="display:inline-flex; align-items:center; background:{t_color}18; color:{t_color}; font-size:0.7rem; font-weight:700; padding:3px 8px; border-radius:4px; letter-spacing:1px; flex-shrink:0; min-width:55px; justify-content:center;">{t_icon} {a.type.upper()}</div>
+          {conviction_badge}
           <div style="color:#9ca3af; font-size:0.9rem; line-height:1.4; flex:1;">{a.detail}{new_badge}</div>
         </div>'''
 
@@ -451,8 +515,14 @@ def tool_definitions() -> list[dict]:
                 "Add an action-plan row for a holding (or a brand-new BUY). "
                 "EVERY current holding (IVV, OEF, GLD, IAU, EFV, BAI, ISRG, MSFT) "
                 "and Cash MUST get exactly one row. You may add 1-3 NEW BUY rows "
-                "for new ideas. Detail must be specific (numbers, dates) and must "
-                "be a decision the reader can act on today — no 'revisit later'."
+                "for new ideas. Detail must be SPECIFIC (numbers, dates) and "
+                "QUANTIFIED — every BUY/ADD/SELL/TRIM must include $ amount, "
+                "share count, or % of position. Every SELL/TRIM must include the "
+                "explicit $ tax cost at current ST/LT status. Conviction is "
+                "required and you must use HIGH sparingly — at most 2-3 HIGH "
+                "calls per issue. The CASH row, if HOLD, must either propose a "
+                "deployment plan ($+ticker+horizon) or name a specific reason "
+                "to defer (FOMC/CPI/earnings/vol)."
             ),
             "input_schema": {
                 "type": "object",
@@ -468,8 +538,37 @@ def tool_definitions() -> list[dict]:
                         "type": "string",
                         "enum": ["NOW", "SOON", "WAIT", "NO ACTION"],
                     },
+                    "conviction": {
+                        "type": "string",
+                        "enum": ["HIGH", "MEDIUM", "LOW"],
+                        "description": (
+                            "Honest conviction. HIGH = act today, you'd bet "
+                            "real money on this. MEDIUM = lean toward it but "
+                            "not urgent. LOW = noise / inertia. Use HIGH "
+                            "sparingly (≤2-3 per issue)."
+                        ),
+                    },
                 },
-                "required": ["symbol", "name", "type", "detail", "urgency"],
+                "required": ["symbol", "name", "type", "detail", "urgency", "conviction"],
+            },
+        },
+        {
+            "name": "set_portfolio_thesis",
+            "description": (
+                "Set the day's PORTFOLIO THESIS — one paragraph (3-5 sentences) "
+                "capturing your dominant macro/positioning view that ties the "
+                "action plan together. This persists across editions; future "
+                "editions will grade it. Be concrete. Examples of good thesis: "
+                "'Tilted to large-cap value via OEF/EFV; gold (~16% via GLD/IAU) "
+                "sized for inflation stickiness; cash at 22% deployable on any "
+                "S&P -3% day.' NOT acceptable: vague platitudes like 'cautiously "
+                "optimistic' or 'balanced approach'. Required to call before "
+                "finalize_article."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {"text": {"type": "string"}},
+                "required": ["text"],
             },
         },
         {
@@ -723,6 +822,11 @@ def _check_completeness(store: ArticleStore) -> list[str]:
         problems.append("hero_summary is empty — call set_hero_summary")
     if not store.market_summary:
         problems.append("market_summary is empty — call set_market_summary")
+    if not store.portfolio_thesis:
+        problems.append(
+            "portfolio_thesis is empty — call set_portfolio_thesis with a concrete "
+            "3-5 sentence positioning view that future editions can grade"
+        )
     if len(store.analysis_cards) < 5:
         problems.append(
             f"only {len(store.analysis_cards)} analysis cards — need at least 5 covering "
@@ -736,21 +840,100 @@ def _check_completeness(store: ArticleStore) -> list[str]:
             f"missing add_position_action for: {missing}. EVERY holding plus CASH must have one row."
         )
 
-    def _scan(text: str, where: str) -> None:
+    # Banned-phrase scans (deferral + execution-implying)
+    def _scan(text: str, where: str, phrases: tuple[str, ...], kind: str) -> None:
         low = text.lower()
-        for phrase in BANNED_DEFERRAL_PHRASES:
+        for phrase in phrases:
             if phrase in low:
-                problems.append(
-                    f"banned deferral phrase '{phrase}' in {where} — rewrite that section "
-                    "with a concrete decision (use tools to gather more data if needed)"
-                )
+                if kind == "deferral":
+                    problems.append(
+                        f"banned deferral phrase '{phrase}' in {where} — rewrite with a "
+                        "concrete decision (use tools to gather more data if needed)"
+                    )
+                else:  # execution
+                    problems.append(
+                        f"banned execution phrase '{phrase}' in {where} — you issue "
+                        "RECOMMENDATIONS, not trades. The user has not necessarily "
+                        "acted. Rephrase as 'I recommended X' or 'the [date] call was Y'."
+                    )
 
     for i, c in enumerate(store.analysis_cards, 1):
-        _scan(c.body, f"analysis card #{i} ({c.title!r})")
+        _scan(c.body, f"analysis card #{i} ({c.title!r})", BANNED_DEFERRAL_PHRASES, "deferral")
+        _scan(c.body, f"analysis card #{i} ({c.title!r})", BANNED_EXECUTION_PHRASES, "execution")
     for a in store.actions:
-        _scan(a.detail, f"action row for {a.symbol}")
-    _scan(store.hero_summary, "hero_summary")
-    _scan(store.market_summary, "market_summary")
+        _scan(a.detail, f"action row for {a.symbol}", BANNED_DEFERRAL_PHRASES, "deferral")
+        _scan(a.detail, f"action row for {a.symbol}", BANNED_EXECUTION_PHRASES, "execution")
+    _scan(store.hero_summary, "hero_summary", BANNED_DEFERRAL_PHRASES, "deferral")
+    _scan(store.hero_summary, "hero_summary", BANNED_EXECUTION_PHRASES, "execution")
+    _scan(store.market_summary, "market_summary", BANNED_DEFERRAL_PHRASES, "deferral")
+    _scan(store.market_summary, "market_summary", BANNED_EXECUTION_PHRASES, "execution")
+    _scan(store.portfolio_thesis, "portfolio_thesis", BANNED_EXECUTION_PHRASES, "execution")
+
+    # Subtle hallucination — "the [date] add at $X" / "today's buy at $Y"
+    def _scan_hallucinated_trade(text: str, where: str) -> None:
+        m = _HALLUCINATED_TRADE_PATTERN.search(text)
+        if m:
+            problems.append(
+                f"trade-execution hallucination in {where}: '{m.group(0)}' — that "
+                "phrasing treats a prior RECOMMENDATION as an executed trade. "
+                "Reword as 'the [date] recommendation to add' or 'the call to "
+                "add on [date]' or 'if Ben had followed the [date] add'."
+            )
+
+    for i, c in enumerate(store.analysis_cards, 1):
+        _scan_hallucinated_trade(c.body, f"analysis card #{i} ({c.title!r})")
+    for a in store.actions:
+        _scan_hallucinated_trade(a.detail, f"action row for {a.symbol}")
+    _scan_hallucinated_trade(store.hero_summary, "hero_summary")
+    _scan_hallucinated_trade(store.market_summary, "market_summary")
+    _scan_hallucinated_trade(store.portfolio_thesis, "portfolio_thesis")
+
+    # Quantification: every BUY/ADD/SELL/TRIM must specify $ / shares / %
+    for a in store.actions:
+        if a.type.upper() in _QUANTIFY_TYPES and not _NUMERIC_QTY.search(a.detail):
+            problems.append(
+                f"action for {a.symbol} ({a.type}) is unquantified — include "
+                "$ amount, share count, or % of position in the detail "
+                "(e.g. 'add ~5 shares (~$2,000)' or 'trim 20% of position')."
+            )
+
+    # Tax cost in dollars on TRIM/SELL
+    for a in store.actions:
+        if a.type.upper() in _TAX_TYPES and not _TAX_DOLLAR.search(a.detail):
+            problems.append(
+                f"action for {a.symbol} ({a.type}) lacks an explicit tax cost — "
+                "compute the dollar tax impact at the position's ST/LT rate. "
+                "Include phrasing like '~$X tax at ST rate' or 'after-tax $Y'."
+            )
+
+    # CASH row substance: deployment plan OR specific defer reason
+    cash_action = next((a for a in store.actions if a.symbol.upper() == "CASH"), None)
+    if cash_action:
+        detail_low = cash_action.detail.lower()
+        has_deploy = any(k in detail_low for k in _DEPLOY_KEYWORDS) and bool(_NUMERIC_QTY.search(cash_action.detail))
+        has_defer = any(k in detail_low for k in _DEFER_KEYWORDS)
+        if not (has_deploy or has_defer):
+            problems.append(
+                "CASH row lacks substance — with idle cash you must EITHER propose a "
+                "deployment plan ($ amount + ticker + horizon, e.g. 'deploy $10K into "
+                "EFV over 4 weeks') OR cite a specific near-term reason to defer "
+                "(FOMC, CPI, earnings, vol event). 'Hold cash' is not enough."
+            )
+
+    # Conviction discipline: 1 ≤ HIGH ≤ 3
+    high_count = sum(1 for a in store.actions if a.conviction.upper() == "HIGH")
+    if store.actions and high_count == 0:
+        problems.append(
+            "no HIGH-conviction action rows — you're hedging across the board. "
+            "Pick at least one position where you'd genuinely act today and tag it HIGH."
+        )
+    if high_count > 3:
+        problems.append(
+            f"{high_count} HIGH-conviction action rows — that's too many. HIGH "
+            "means you'd bet your own money; if everything is HIGH then nothing is. "
+            "Demote weaker ones to MEDIUM. Keep HIGH at 2-3 max."
+        )
+
     return problems
 
 
@@ -793,11 +976,15 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
             type=args["type"],
             detail=args["detail"],
             urgency=args["urgency"],
+            conviction=args.get("conviction", "MEDIUM"),
         ))
-        return f"ok — action for {args['symbol']} added"
+        return f"ok — action for {args['symbol']} added (conviction={args.get('conviction','MEDIUM')})"
     if name == "set_market_summary":
         store.market_summary = args["text"].strip()
         return "ok — market summary set"
+    if name == "set_portfolio_thesis":
+        store.portfolio_thesis = args["text"].strip()
+        return "ok — portfolio thesis set"
     if name == "finalize_article":
         problems = _check_completeness(store)
         if problems:
@@ -842,7 +1029,8 @@ def build_system_prompt(data: dict) -> str:
     macro = data["macro"]
 
     positions_summary = "\n".join(
-        f"- {pos['symbol']} ({pos['name']}): ${pos['price']:.2f}, "
+        f"- {pos['symbol']} ({pos['name']}): {pos['shares']:.0f} shares @ ${pos['price']:.2f} "
+        f"= ${pos['shares'] * pos['price']:,.0f}, "
         f"day {pos['day_chg']:+.1f}%, total P&L {pos['gain']:+,.0f} "
         f"({pos['gain_pct']:+.1f}%), RSI {pos['rsi']:.0f}, "
         f"at {pos.get('range_pos', 0):.0f}% of 52W range, "
@@ -892,15 +1080,24 @@ def build_system_prompt(data: dict) -> str:
         for p in predictions[:8]
     ) or "  (none)"
 
-    # Prior calls — turn this into an ongoing newsletter, not point-in-time analysis
+    # Prior calls + prior thesis — turn this into an ongoing newsletter
     try:
-        from decision_journal import load_recent_decisions, render_grading_block, price_snapshot_from_data
+        from decision_journal import (
+            load_recent_decisions, render_grading_block,
+            price_snapshot_from_data, shares_snapshot_from_data,
+            load_last_thesis, render_thesis_block,
+        )
         prior_decisions = load_recent_decisions(days=7)
         grading_block = render_grading_block(
-            prior_decisions, price_snapshot_from_data(data), today_d
+            prior_decisions,
+            price_snapshot_from_data(data),
+            today_d,
+            shares_snapshot_from_data(data),
         )
+        thesis_block = render_thesis_block(load_last_thesis(), today_d)
     except Exception as e:
         grading_block = f"\n(decision_journal unavailable: {e})\n"
+        thesis_block = ""
 
     return f"""You are the senior portfolio analyst writing today's edition of Portfolio Pulse, an editorial-style market briefing.
 
@@ -917,14 +1114,20 @@ ABSOLUTE RULES:
    - Thesis intact AND no clearly better opportunity → hold (tax deferral is a bonus, not the reason)
    - Thesis broken OR a clearly superior opportunity exists → SELL even at the short-term rate. The after-tax outcome of cutting a deteriorating position beats riding it down to "save tax".
    - Use tax as a TIE-BREAKER between roughly equivalent options, never as a trump card.
-5. POST-EARNINGS REACTIONS ARE THE HIGHEST-PRIORITY CONTENT. If a holding reported in the last 14 days, you MUST: (a) call fetch_earnings to confirm the actuals, (b) call fetch_news to read the reaction, (c) write a dedicated analysis card with label "EARNINGS RESULT", (d) make a clear hold/trim/sell call in that holding's action row.
+5. POST-EARNINGS REACTIONS ARE THE HIGHEST-PRIORITY CONTENT. If a holding reported in the last 14 days, you MUST: (a) call fetch_earnings to confirm the actuals, (b) call fetch_news to read the reaction, (c) write a dedicated analysis card with label "EARNINGS RESULT", (d) make a clear hold/trim/sell call in that holding's action row. Same applies in mirror image for UPCOMING earnings within 14 days: pre-position the call before the print.
 6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. If you're uncertain about a price, an insider trade, an analyst target, or what the market did today — look it up.
-7. GRADE YOUR PAST CALLS. The PRIOR CALLS block (if present) shows what you (the previous edition's analyst) recommended in the last 7 days, plus where the price has moved since. Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO" with title like "Last week's calls — what aged well, what didn't" and grade them honestly. If a HOLD has dropped 5%+, admit you should have called the trim. If a BUY went down, own it. If a SELL went down, take credit. This is a newsletter — you are the same analyst across editions, not a fresh one each day.
+7. GRADE PAST CALLS ADVERSARIALLY. The PRIOR RECOMMENDATIONS block shows what the previous edition's analyst recommended, plus where the price has moved AND whether the user actually executed (USER DID NOT ACT vs USER ACTED). Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO". For each prior call, before grading, write the strongest case it was WRONG: for every BUY/ADD, what would a bear say? For every HOLD, why should it have been a TRIM? For every SELL/TRIM, was it premature? Then judge which side has the stronger argument given today's data. You have NO EGO invested in prior calls — they are data, not your positions. A different analyst writing tomorrow's edition would happily reverse them; you should have the same freedom. If you find yourself defending a prior call mostly because it was your call, REVERSE it.
+8. YOU ISSUE RECOMMENDATIONS, NOT TRADES. You have no trade-execution permission. The user reads the article and decides independently. Past calls are advice that may or may not have been acted on. NEVER write "we bought", "today's buy executed", "the position was trimmed", "we added", "i bought", "executed cleanly" — those describe trades that did not happen. ALSO BANNED is the subtler form: "the April 30 add at $X is +1.4%" or "today's buy at $Y" — same hallucination, different surface. Reword as "the April 30 recommendation to add" or "the call to add on April 30" or "if Ben had followed the April 30 ADD". The Schwab share counts in the PORTFOLIO block are the AUTHORITATIVE record — read those numbers and use them verbatim. NEVER infer a share count from "old position + recommended add"; the recommended add likely did not happen. The PRIOR RECOMMENDATIONS block tags each call USER DID NOT ACT or USER ACTED — read it and respect it. If a record predates execution-tracking and lacks the tag, default to USER DID NOT ACT.
+9. QUANTIFY EVERY ACTION. Every BUY/ADD/SELL/TRIM action row must include a $ amount, share count, or % of position in the detail. "Add MSFT" is not enough; "Add ~5 shares (~$2,000)" is. Every SELL/TRIM must compute the explicit dollar tax cost at that position's ST/LT rate ("~$X tax at the 30.3% ST rate" or "after-tax $Y").
+10. CASH IS A POSITION. With significant idle cash, the CASH row cannot just say "hold cash". You must EITHER propose a concrete deployment plan ($ amount + ticker + horizon, e.g. "deploy $10K into EFV over 4 weeks on -2% S&P days") OR name a specific near-term reason to defer (FOMC decision in N days, CPI release, earnings event, vol regime). Idle cash without a thesis is the silent expensive default.
+11. CONVICTION IS REQUIRED AND HONEST. Each action row carries HIGH/MEDIUM/LOW conviction. HIGH means you'd act today and you'd bet your own money. MEDIUM means lean toward action. LOW means noise. Use HIGH sparingly — at most 2-3 per issue. But you MUST tag at least one action HIGH; if everything is MEDIUM you're hedging instead of leading.
+12. SET A PORTFOLIO THESIS. Call set_portfolio_thesis once with a 3-5 sentence concrete positioning view that ties the action plan together. NOT "cautiously optimistic" or "balanced approach"; YES "Tilted to large-cap value via OEF/EFV; 16% gold sized for inflation stickiness; 22% cash deployable on S&P -3% days." This persists across editions; future you will grade it. The PRIOR PORTFOLIO THESIS block (if present) shows what the previous edition committed to — grade it adversarially in the THESIS UPDATE card.
+13. SELF-CONSISTENCY. Before calling finalize_article, re-read your cards and action rows. If two cards make contradictory claims (e.g., "rotate to defensives" + "lean into AI capex"), revise. The edition must be internally coherent.
 
 WORKFLOW:
-1. Skim the data block below.
+1. Skim the data block below — including PRIOR RECOMMENDATIONS, PRIOR PORTFOLIO THESIS (if present), recent + UPCOMING earnings.
 2. Pull anything else you need: pre-buy checks, post-earnings actuals, web search for catalysts, recession-check, insider activity, etc. Lean toward MORE research, not less.
-3. Build the article via the article tools: set_hero_summary → 5-8 add_analysis_card calls → 1-3 add_opportunity calls → one add_position_action per holding+cash → set_market_summary → finalize_article.
+3. Build the article via the article tools: set_hero_summary → set_portfolio_thesis → 5-8 add_analysis_card calls (FIRST card grades prior calls + thesis adversarially) → 1-3 add_opportunity calls → one add_position_action per holding+cash (with conviction) → set_market_summary → finalize_article.
 4. Call finalize_article when done. The loop ends there.
 
 INVESTMENT FRAMEWORK: Read PRINCIPLES.md early via read_file('PRINCIPLES.md'). Buffett/Munger/Dalio principles. Greedy when others fearful, fearful when greedy. Never sell on a single signal. Patience is the default — but patience is not paralysis when the data calls for action.
@@ -950,7 +1153,7 @@ PREDICTION MARKETS (Polymarket real money):
 
 BOTTOMING SCAN (non-portfolio tickers showing oversold + low-in-range):
 {opps_str}
-{grading_block}"""
+{thesis_block}{grading_block}"""
 
 
 # ---------------------------------------------------------------------------

@@ -1591,9 +1591,19 @@ def main():
               f"{len(store.opportunities)} opps, {len(store.actions)} actions")
         if store.finalized:
             try:
-                from decision_journal import append_decisions, price_snapshot_from_data
-                n = append_decisions(issue_date, store, price_snapshot_from_data(data))
+                from decision_journal import (
+                    append_decisions, price_snapshot_from_data,
+                    shares_snapshot_from_data, append_thesis,
+                )
+                n = append_decisions(
+                    issue_date, store,
+                    price_snapshot_from_data(data),
+                    shares_snapshot_from_data(data),
+                )
                 print(f"Wrote {n} decisions to journal")
+                if store.portfolio_thesis:
+                    append_thesis(issue_date, store.portfolio_thesis)
+                    print(f"Wrote thesis to journal")
             except Exception as e:
                 print(f"Journal write failed: {e}")
     else:
