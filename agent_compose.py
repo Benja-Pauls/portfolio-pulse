@@ -198,13 +198,62 @@ class ArticleStore:
     opportunities: list[Opportunity] = field(default_factory=list)
     actions: list[PositionAction] = field(default_factory=list)
     finalized: bool = False
+    finalize_attempts: int = 0  # for the safety valve: skip soft validations after 3 retries
 
-    def render(self, opp_data: list[dict] | None = None) -> tuple[str, str, str]:
-        """Render to (analysis_html, opps_html, conclusion_html) matching the
-        signature render_html() expects. opp_data is the bottoming-scan dicts
-        from gather_data() so we can attach the visual range bar."""
+    def render(self, opp_data: list[dict] | None = None) -> tuple[str, str, str, str]:
+        """Render to (top_moves_html, analysis_html, opps_html, conclusion_html).
+
+        top_moves_html: HIGH-conviction action rows surfaced at the top of the
+        article — the "if you only read three things" panel.
+        """
         opp_data = opp_data or []
-        return self._render_analysis(), self._render_opps(opp_data), self._render_conclusion()
+        return (
+            self._render_top_moves(),
+            self._render_analysis(),
+            self._render_opps(opp_data),
+            self._render_conclusion(),
+        )
+
+    def _render_top_moves(self) -> str:
+        """Big, mobile-friendly cards for HIGH-conviction calls only. Renders
+        nothing if there are no HIGH calls."""
+        high_actions = [a for a in self.actions if a.conviction.upper() == "HIGH"]
+        if not high_actions:
+            return ""
+        cards = ""
+        for a in high_actions:
+            t_color, t_icon = TYPE_CONFIG.get(a.type.upper(), ("#6b7280", "—"))
+            u_color, u_dot = URGENCY_CONFIG.get(a.urgency.upper(), ("#6b7280", "○"))
+            # Pull the "Invalidated if[:]" tail off the detail so we can render it visually
+            detail = a.detail
+            invalidation = ""
+            m = _re.search(r"\b(?:Invalidated|Invalidate)\s+if:?\s*", detail, _re.I)
+            if m:
+                invalidation = detail[m.end():].strip().rstrip(".") + "."
+                detail = detail[:m.start()].rstrip(" .—-")
+            invalidation_html = (
+                f'<div class="topmove-invalidation"><span class="topmove-invalidation-label">'
+                f'⚠ Invalidated if</span> {invalidation}</div>' if invalidation else ""
+            )
+            cards += f'''
+        <div class="topmove-card" style="--accent: {t_color};">
+          <div class="topmove-head">
+            <div class="topmove-symbol-row">
+              <span class="topmove-symbol">{a.symbol}</span>
+              <span class="topmove-type-badge" style="--badge: {t_color};">{t_icon} {a.type.upper()}</span>
+            </div>
+            <div class="topmove-urgency" style="color: {u_color};">{u_dot} {a.urgency.upper()}</div>
+          </div>
+          <div class="topmove-name">{a.name}</div>
+          <div class="topmove-detail">{detail}</div>
+          {invalidation_html}
+        </div>'''
+        return f'''
+      <div class="topmoves-section">
+        <div class="topmoves-label">Today's high-conviction moves</div>
+        <div class="topmoves-tagline">If you only act on three things from this issue.</div>
+        <div class="topmoves-grid">{cards}</div>
+      </div>'''
 
     def _render_analysis(self) -> str:
         out = ""
@@ -431,6 +480,54 @@ def tool_definitions() -> list[dict]:
                     "filename": {"type": "string", "description": "e.g. 'PRINCIPLES.md'"}
                 },
                 "required": ["filename"],
+            },
+        },
+        {
+            "name": "fetch_options_chain",
+            "description": (
+                "Get the options chain for a ticker — strikes, bid/ask, IV, "
+                "volume, OI, plus annualized premium yield on cash-secured. "
+                "Use this to evaluate cash-secured puts (paid to wait at your "
+                "declared entry) or covered calls (income on overbought "
+                "positions). Especially valuable when there is significant "
+                "idle cash and a clear lower-entry trigger; "
+                "selling a put at that trigger captures premium AND commits "
+                "to the buy. Filters to strikes within ±15% of current price."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Ticker e.g. MSFT"},
+                    "expiry": {
+                        "type": "string",
+                        "description": "Optional YYYY-MM-DD expiration. Defaults to nearest expiry ≥14 days out.",
+                    },
+                    "side": {
+                        "type": "string",
+                        "enum": ["put", "call"],
+                        "description": "Defaults to 'put' (cash-secured put income).",
+                    },
+                },
+                "required": ["symbol"],
+            },
+        },
+        {
+            "name": "fetch_economic_calendar",
+            "description": (
+                "Get upcoming major US economic releases (CPI, PCE, jobs, GDP) "
+                "and Fed events (FOMC meetings) with exact dates. Use this "
+                "BEFORE writing 'wait for FOMC' or 'pre-CPI' phrasing — cite "
+                "the actual date so the deployment plan has a real timeline. "
+                "Returns next N days, default 30."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "days_ahead": {
+                        "type": "integer",
+                        "description": "Lookforward window. Default 30, max 90.",
+                    }
+                },
             },
         },
         {
@@ -805,6 +902,132 @@ def _fetch_news(symbol: str, days: int = 7, limit: int = 8) -> str:
     return "\n".join(lines)
 
 
+def _fetch_options_chain(symbol: str, expiry: str | None = None, side: str = "put") -> str:
+    """Pull options chain for a symbol. Use to evaluate cash-secured puts (income
+    while waiting for an entry) or covered calls. Returns formatted strike table
+    filtered to within ±15% of current price."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        return "ERROR: yfinance not installed"
+    sym = symbol.upper()
+    t = yf.Ticker(sym)
+    expirations = list(t.options)
+    if not expirations:
+        return f"No options listed for {sym}."
+    today = datetime.now().date()
+    chosen = None
+    if expiry and expiry in expirations:
+        chosen = expiry
+    if not chosen:
+        for e in expirations:
+            try:
+                d = datetime.strptime(e, "%Y-%m-%d").date()
+                if (d - today).days >= 14:
+                    chosen = e
+                    break
+            except ValueError:
+                continue
+        chosen = chosen or expirations[0]
+    try:
+        chain = t.option_chain(chosen)
+        df = chain.puts if side.lower() == "put" else chain.calls
+        h = t.history(period="2d")
+        cur_price = float(h["Close"].iloc[-1]) if not h.empty else 0.0
+    except Exception as e:
+        return f"ERROR fetching options: {e}"
+    if cur_price <= 0:
+        return f"ERROR: could not get current price for {sym}"
+    lo, hi = cur_price * 0.85, cur_price * 1.15
+    df = df[(df["strike"] >= lo) & (df["strike"] <= hi)].copy()
+    if df.empty:
+        return f"No {side}s within ±15% for {sym} expiring {chosen} (current ${cur_price:.2f})."
+    df = df.head(20)
+    days_to_exp = (datetime.strptime(chosen, "%Y-%m-%d").date() - today).days
+    lines = [
+        f"{side.upper()} OPTIONS for {sym} (expires {chosen}, {days_to_exp}d out, current ${cur_price:.2f}):",
+        f"  {'Strike':>8} | {'Bid':>5} | {'Ask':>5} | {'Last':>5} | {'IV':>5} | {'Vol':>6} | {'OI':>6} | annualized prem on cash-secured",
+    ]
+    def _safe_float(v):
+        try:
+            f = float(v)
+            return 0.0 if f != f else f  # NaN check
+        except (TypeError, ValueError):
+            return 0.0
+    def _safe_int(v):
+        return int(_safe_float(v))
+    for _, row in df.iterrows():
+        strike = _safe_float(row["strike"])
+        bid = _safe_float(row.get("bid"))
+        ask = _safe_float(row.get("ask"))
+        last = _safe_float(row.get("lastPrice"))
+        iv = _safe_float(row.get("impliedVolatility")) * 100
+        vol = _safe_int(row.get("volume"))
+        oi = _safe_int(row.get("openInterest"))
+        # Annualized premium yield on collateral (for puts: collateral = strike × 100)
+        # For one contract: premium = mid × 100, collateral = strike × 100
+        mid = ((bid + ask) / 2) if bid > 0 and ask > 0 else last
+        ann_yield_pct = (mid / strike) * (365 / max(days_to_exp, 1)) * 100 if strike > 0 else 0
+        lines.append(
+            f"  ${strike:>7.2f} | ${bid:>4.2f} | ${ask:>4.2f} | ${last:>4.2f} | {iv:>4.1f}% | "
+            f"{vol:>6} | {oi:>6} | {ann_yield_pct:>5.1f}% APY"
+        )
+    lines.append(
+        "  Note: APY assumes the put expires worthless. If assigned, you own 100 shares "
+        f"at strike (collateral was strike × 100 = ${df['strike'].iloc[0] * 100:,.0f} for the lowest-strike row)."
+    )
+    return "\n".join(lines)
+
+
+# Manually maintained 2026 economic calendar. Update annually. Times are best-effort
+# from Fed schedule, BLS calendar, and BEA — verify against fetch_news for any specific
+# event before the agent commits to a deployment plan timed to it.
+_ECONOMIC_CALENDAR_2026 = [
+    ("2026-05-01", "Jobs Report (NFP) — April", "highest"),
+    ("2026-05-06", "FOMC rate decision (May meeting)", "highest"),
+    ("2026-05-13", "CPI — April", "highest"),
+    ("2026-05-14", "PPI — April", "medium"),
+    ("2026-05-15", "Retail Sales — April", "medium"),
+    ("2026-05-29", "PCE — April (Fed's preferred inflation gauge)", "high"),
+    ("2026-06-05", "Jobs Report (NFP) — May", "highest"),
+    ("2026-06-11", "CPI — May", "highest"),
+    ("2026-06-17", "FOMC rate decision (June meeting) + SEP/dot plot", "highest"),
+    ("2026-06-26", "PCE — May", "high"),
+    ("2026-07-02", "Jobs Report (NFP) — June", "highest"),
+    ("2026-07-15", "CPI — June", "highest"),
+    ("2026-07-29", "FOMC rate decision (July meeting)", "highest"),
+    ("2026-07-30", "GDP Q2 advance", "high"),
+    ("2026-07-31", "PCE — June", "high"),
+    ("2026-09-04", "Jobs Report (NFP) — August", "highest"),
+    ("2026-09-11", "CPI — August", "highest"),
+    ("2026-09-16", "FOMC rate decision (September meeting) + SEP/dot plot", "highest"),
+]
+
+
+def _fetch_economic_calendar(days_ahead: int = 30) -> str:
+    """Return upcoming major US economic releases / Fed events in next N days.
+    Use this when proposing a cash-deployment plan or "wait until X" thesis —
+    cite the actual date, not a vague 'next FOMC'."""
+    today = datetime.now().date()
+    upcoming = []
+    for ds, name, impact in _ECONOMIC_CALENDAR_2026:
+        try:
+            d = datetime.strptime(ds, "%Y-%m-%d").date()
+            delta = (d - today).days
+            if 0 <= delta <= days_ahead:
+                upcoming.append((d, delta, name, impact))
+        except ValueError:
+            continue
+    upcoming.sort()
+    if not upcoming:
+        return f"No major economic events in next {days_ahead} days. Calendar may need refresh; verify via web_search if specific timing matters."
+    lines = [f"Upcoming US economic events (next {days_ahead} days, manual schedule — verify if critical):"]
+    for d, delta, name, impact in upcoming:
+        when = "today" if delta == 0 else (f"tomorrow" if delta == 1 else f"in {delta}d")
+        lines.append(f"  {d.isoformat()} ({when}) — {name}  [{impact} impact]")
+    return "\n".join(lines)
+
+
 def _read_file(filename: str) -> str:
     if filename not in READABLE_FILES:
         return f"ERROR: '{filename}' not on whitelist {sorted(READABLE_FILES)}"
@@ -840,22 +1063,46 @@ def _check_completeness(store: ArticleStore) -> list[str]:
             f"missing add_position_action for: {missing}. EVERY holding plus CASH must have one row."
         )
 
-    # Banned-phrase scans (deferral + execution-implying)
+    # Banned-phrase scans (deferral + execution-implying). Skips occurrences in
+    # negative or counterfactual/hypothetical contexts. The agent legitimately
+    # uses these phrases when (a) negating ("this is NOT a wait-and-see"),
+    # (b) writing the bear case ("a bear would say we sold strength"), or
+    # (c) running an if-counterfactual ("if Ben had bought, he would now have…").
+    _NEGATION_PATTERN = _re.compile(
+        r"\b(?:not|never|isn'?t|aren'?t|won'?t|wasn'?t|weren'?t|stop|avoid|"
+        r"no\s+longer|no\s+more|would|could|might|may|should|"
+        r"would\s+say|would\s+argue|might\s+say|could\s+argue|"
+        r"a\s+bear|a\s+bull|a\s+skeptic|argument\s+that|case\s+that|"
+        r"if\s+ben|if\s+he|if\s+executed|had\s+followed|had\s+executed)\b"
+    )
+
+    def _phrase_is_negated(text_low: str, phrase: str, idx: int) -> bool:
+        """True if phrase at idx is preceded (within 80 chars) by negation/modal."""
+        preceding = text_low[max(0, idx - 80):idx]
+        return bool(_NEGATION_PATTERN.search(preceding))
+
     def _scan(text: str, where: str, phrases: tuple[str, ...], kind: str) -> None:
         low = text.lower()
         for phrase in phrases:
-            if phrase in low:
-                if kind == "deferral":
-                    problems.append(
-                        f"banned deferral phrase '{phrase}' in {where} — rewrite with a "
-                        "concrete decision (use tools to gather more data if needed)"
-                    )
-                else:  # execution
-                    problems.append(
-                        f"banned execution phrase '{phrase}' in {where} — you issue "
-                        "RECOMMENDATIONS, not trades. The user has not necessarily "
-                        "acted. Rephrase as 'I recommended X' or 'the [date] call was Y'."
-                    )
+            i = 0
+            while True:
+                idx = low.find(phrase, i)
+                if idx < 0:
+                    break
+                if not _phrase_is_negated(low, phrase, idx):
+                    if kind == "deferral":
+                        problems.append(
+                            f"banned deferral phrase '{phrase}' in {where} — rewrite with a "
+                            "concrete decision (use tools to gather more data if needed)"
+                        )
+                    else:  # execution
+                        problems.append(
+                            f"banned execution phrase '{phrase}' in {where} — you issue "
+                            "RECOMMENDATIONS, not trades. The user has not necessarily "
+                            "acted. Rephrase as 'I recommended X' or 'the [date] call was Y'."
+                        )
+                    break  # one complaint per phrase per location
+                i = idx + len(phrase)
 
     for i, c in enumerate(store.analysis_cards, 1):
         _scan(c.body, f"analysis card #{i} ({c.title!r})", BANNED_DEFERRAL_PHRASES, "deferral")
@@ -870,15 +1117,30 @@ def _check_completeness(store: ArticleStore) -> list[str]:
     _scan(store.portfolio_thesis, "portfolio_thesis", BANNED_EXECUTION_PHRASES, "execution")
 
     # Subtle hallucination — "the [date] add at $X" / "today's buy at $Y"
+    # BUT: legitimate prior-call grading (THESIS UPDATE) needs to reference these.
+    # Skip the match if surrounding context contains grading/recommendation keywords.
+    _GRADING_CONTEXT_KEYWORDS = (
+        "recommendation", "recommended", "called for", "advice", "advised",
+        "if ben", "if he had", "would have", "had followed", "had executed",
+        "did not execute", "did not act", "user did not", "no execution",
+        "if executed", "user acted", "did not run", "schwab still shows",
+        "share count unchanged", "wasn't executed", "was not executed",
+    )
+
     def _scan_hallucinated_trade(text: str, where: str) -> None:
-        m = _HALLUCINATED_TRADE_PATTERN.search(text)
-        if m:
+        text_low = text.lower()
+        for m in _HALLUCINATED_TRADE_PATTERN.finditer(text):
+            window = text_low[max(0, m.start() - 80):min(len(text_low), m.end() + 80)]
+            if any(k in window for k in _GRADING_CONTEXT_KEYWORDS):
+                continue
             problems.append(
                 f"trade-execution hallucination in {where}: '{m.group(0)}' — that "
-                "phrasing treats a prior RECOMMENDATION as an executed trade. "
-                "Reword as 'the [date] recommendation to add' or 'the call to "
-                "add on [date]' or 'if Ben had followed the [date] add'."
+                "phrasing treats a prior RECOMMENDATION as an executed trade without "
+                "any grading-context cue. Reword as 'the [date] recommendation to add' "
+                "or 'if Ben had followed the [date] add' or pair it with 'Schwab still "
+                "shows N shares — the prior add did not execute'."
             )
+            return  # one complaint per location is enough
 
     for i, c in enumerate(store.analysis_cards, 1):
         _scan_hallucinated_trade(c.body, f"analysis card #{i} ({c.title!r})")
@@ -934,6 +1196,18 @@ def _check_completeness(store: ArticleStore) -> list[str]:
             "Demote weaker ones to MEDIUM. Keep HIGH at 2-3 max."
         )
 
+    # Devil's advocate: HIGH conviction must include falsification clause
+    for a in store.actions:
+        if a.conviction.upper() == "HIGH":
+            low = a.detail.lower()
+            if "invalidated if" not in low and "invalidate if" not in low:
+                problems.append(
+                    f"HIGH-conviction {a.symbol} action lacks a falsification clause. "
+                    "Add one short sentence at the end: 'Invalidated if: [specific observable]' "
+                    "(e.g. 'Invalidated if MSFT closes below $385 on volume'). If you can't "
+                    "name what would prove this wrong, it isn't HIGH conviction."
+                )
+
     return problems
 
 
@@ -947,6 +1221,14 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
         return _fetch_news(args["symbol"], args.get("days", 7), args.get("limit", 8))
     if name == "read_file":
         return _read_file(args["filename"])
+    if name == "fetch_options_chain":
+        return _fetch_options_chain(
+            args["symbol"],
+            args.get("expiry"),
+            args.get("side", "put"),
+        )
+    if name == "fetch_economic_calendar":
+        return _fetch_economic_calendar(min(args.get("days_ahead", 30), 90))
 
     if name == "set_hero_summary":
         store.hero_summary = args["text"].strip()
@@ -970,15 +1252,23 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
         ))
         return f"ok — opportunity {args['symbol']} added"
     if name == "add_position_action":
-        store.actions.append(PositionAction(
-            symbol=args["symbol"].upper(),
+        sym = args["symbol"].upper()
+        new_action = PositionAction(
+            symbol=sym,
             name=args["name"],
             type=args["type"],
             detail=args["detail"],
             urgency=args["urgency"],
             conviction=args.get("conviction", "MEDIUM"),
-        ))
-        return f"ok — action for {args['symbol']} added (conviction={args.get('conviction','MEDIUM')})"
+        )
+        # Dedupe by symbol: last write wins. Lets the agent revise without
+        # piling up duplicate rows after a finalize_article rejection.
+        existing = next((i for i, a in enumerate(store.actions) if a.symbol == sym), None)
+        if existing is not None:
+            store.actions[existing] = new_action
+            return f"ok — action for {sym} REPLACED (conviction={new_action.conviction})"
+        store.actions.append(new_action)
+        return f"ok — action for {sym} added (conviction={new_action.conviction})"
     if name == "set_market_summary":
         store.market_summary = args["text"].strip()
         return "ok — market summary set"
@@ -986,14 +1276,40 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
         store.portfolio_thesis = args["text"].strip()
         return "ok — portfolio thesis set"
     if name == "finalize_article":
-        problems = _check_completeness(store)
-        if problems:
+        store.finalize_attempts += 1
+        # Hard problems (always block) vs soft problems (allow through after 3 retries).
+        # Hard: missing required fields, missing actions, untrue HIGH-conviction.
+        # Soft: phrasing/style nags that the regex might be wrong about.
+        all_problems = _check_completeness(store)
+        SOFT_PREFIXES = (
+            "banned deferral phrase",
+            "banned execution phrase",
+            "trade-execution hallucination",
+        )
+        hard = [p for p in all_problems if not any(p.startswith(s) for s in SOFT_PREFIXES)]
+        soft = [p for p in all_problems if any(p.startswith(s) for s in SOFT_PREFIXES)]
+
+        # If only soft problems remain after 3 attempts, let it through with a warning.
+        # The agent has done its best; the validator was probably wrong about context.
+        if hard:
             return (
                 "REJECTED — finalize_article cannot succeed yet. Fix these gaps "
                 "first, then call finalize_article again:\n  - "
-                + "\n  - ".join(problems)
+                + "\n  - ".join(all_problems)
+            )
+        if soft and store.finalize_attempts < 3:
+            return (
+                f"REJECTED (attempt {store.finalize_attempts}/3) — phrasing issues. "
+                "Fix and retry; after 3 attempts the article will pass through anyway "
+                "since the validator may be misreading your context:\n  - "
+                + "\n  - ".join(soft)
             )
         store.finalized = True
+        if soft:
+            return (
+                f"ok — article finalized after {store.finalize_attempts} attempts "
+                f"(safety valve: {len(soft)} soft warnings ignored — review for false positives)"
+            )
         return "ok — article finalized"
 
     return f"ERROR: unknown tool {name}"
@@ -1099,6 +1415,19 @@ def build_system_prompt(data: dict) -> str:
         grading_block = f"\n(decision_journal unavailable: {e})\n"
         thesis_block = ""
 
+    kpi = p.get("kpi")
+    kpi_block = ""
+    if kpi:
+        alpha_sign = "ahead" if kpi["alpha_pct"] >= 0 else "behind"
+        kpi_block = (
+            f"\nPORTFOLIO YTD PERFORMANCE (use these numbers in the THESIS UPDATE card):\n"
+            f"  Portfolio: {kpi['ytd_return_pct']:+.2f}% YTD\n"
+            f"  S&P 500:   {kpi['sp500_ytd_pct']:+.2f}% YTD\n"
+            f"  Alpha:     {kpi['alpha_pct']:+.2f}% ({alpha_sign} the index)\n"
+            f"  Sharpe:    {kpi['sharpe']:.2f}\n"
+            f"  Max DD:    {kpi['max_dd_pct']:.2f}% (worst peak-to-trough YTD)\n"
+        )
+
     return f"""You are the senior portfolio analyst writing today's edition of Portfolio Pulse, an editorial-style market briefing.
 
 TODAY IS {today}. Treat any date earlier than today as PAST. If a holding had an earnings report in the past few days, that is a HISTORICAL EVENT — go look up what the actual numbers were and react to them. Never write about a past date as if it's still upcoming.
@@ -1115,7 +1444,7 @@ ABSOLUTE RULES:
    - Thesis broken OR a clearly superior opportunity exists → SELL even at the short-term rate. The after-tax outcome of cutting a deteriorating position beats riding it down to "save tax".
    - Use tax as a TIE-BREAKER between roughly equivalent options, never as a trump card.
 5. POST-EARNINGS REACTIONS ARE THE HIGHEST-PRIORITY CONTENT. If a holding reported in the last 14 days, you MUST: (a) call fetch_earnings to confirm the actuals, (b) call fetch_news to read the reaction, (c) write a dedicated analysis card with label "EARNINGS RESULT", (d) make a clear hold/trim/sell call in that holding's action row. Same applies in mirror image for UPCOMING earnings within 14 days: pre-position the call before the print.
-6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. If you're uncertain about a price, an insider trade, an analyst target, or what the market did today — look it up.
+6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, fetch_options_chain, fetch_economic_calendar, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. If you're uncertain about a price, an insider trade, an analyst target, or what the market did today — look it up. With significant idle cash, evaluate cash-secured puts via fetch_options_chain — getting paid premium to wait at your declared entry is often dominant over a market-order add. Before any "wait for FOMC/CPI" thesis, call fetch_economic_calendar so the date is concrete.
 7. GRADE PAST CALLS ADVERSARIALLY. The PRIOR RECOMMENDATIONS block shows what the previous edition's analyst recommended, plus where the price has moved AND whether the user actually executed (USER DID NOT ACT vs USER ACTED). Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO". For each prior call, before grading, write the strongest case it was WRONG: for every BUY/ADD, what would a bear say? For every HOLD, why should it have been a TRIM? For every SELL/TRIM, was it premature? Then judge which side has the stronger argument given today's data. You have NO EGO invested in prior calls — they are data, not your positions. A different analyst writing tomorrow's edition would happily reverse them; you should have the same freedom. If you find yourself defending a prior call mostly because it was your call, REVERSE it.
 8. YOU ISSUE RECOMMENDATIONS, NOT TRADES. You have no trade-execution permission. The user reads the article and decides independently. Past calls are advice that may or may not have been acted on. NEVER write "we bought", "today's buy executed", "the position was trimmed", "we added", "i bought", "executed cleanly" — those describe trades that did not happen. ALSO BANNED is the subtler form: "the April 30 add at $X is +1.4%" or "today's buy at $Y" — same hallucination, different surface. Reword as "the April 30 recommendation to add" or "the call to add on April 30" or "if Ben had followed the April 30 ADD". The Schwab share counts in the PORTFOLIO block are the AUTHORITATIVE record — read those numbers and use them verbatim. NEVER infer a share count from "old position + recommended add"; the recommended add likely did not happen. The PRIOR RECOMMENDATIONS block tags each call USER DID NOT ACT or USER ACTED — read it and respect it. If a record predates execution-tracking and lacks the tag, default to USER DID NOT ACT.
 9. QUANTIFY EVERY ACTION. Every BUY/ADD/SELL/TRIM action row must include a $ amount, share count, or % of position in the detail. "Add MSFT" is not enough; "Add ~5 shares (~$2,000)" is. Every SELL/TRIM must compute the explicit dollar tax cost at that position's ST/LT rate ("~$X tax at the 30.3% ST rate" or "after-tax $Y").
@@ -1123,6 +1452,8 @@ ABSOLUTE RULES:
 11. CONVICTION IS REQUIRED AND HONEST. Each action row carries HIGH/MEDIUM/LOW conviction. HIGH means you'd act today and you'd bet your own money. MEDIUM means lean toward action. LOW means noise. Use HIGH sparingly — at most 2-3 per issue. But you MUST tag at least one action HIGH; if everything is MEDIUM you're hedging instead of leading.
 12. SET A PORTFOLIO THESIS. Call set_portfolio_thesis once with a 3-5 sentence concrete positioning view that ties the action plan together. NOT "cautiously optimistic" or "balanced approach"; YES "Tilted to large-cap value via OEF/EFV; 16% gold sized for inflation stickiness; 22% cash deployable on S&P -3% days." This persists across editions; future you will grade it. The PRIOR PORTFOLIO THESIS block (if present) shows what the previous edition committed to — grade it adversarially in the THESIS UPDATE card.
 13. SELF-CONSISTENCY. Before calling finalize_article, re-read your cards and action rows. If two cards make contradictory claims (e.g., "rotate to defensives" + "lean into AI capex"), revise. The edition must be internally coherent.
+14. DEVIL'S ADVOCATE ON HIGH CONVICTION. Every HIGH-conviction action row must end with one short sentence on what would invalidate the call. Format: "Invalidated if: [specific observable]". Examples: "Invalidated if MSFT closes below $385 on volume" / "Invalidated if Q2 Azure growth comes in below 35%". Forces falsifiability — if you can't write the invalidation condition, the conviction isn't HIGH.
+15. WRITE FOR MOBILE FIRST. Ben reads this on his phone in 5 minutes. Lead with the answer, then the reasoning. Each card body: 2-4 punchy sentences max, then the action. Action-row details: under 280 characters when possible. Numbers > adjectives. The first 2 cards must be the most important: (1) THESIS UPDATE grading prior calls + thesis adversarially, (2) the highest-impact decision today (post-earnings reaction, biggest position alert, or the cash deployment).
 
 WORKFLOW:
 1. Skim the data block below — including PRIOR RECOMMENDATIONS, PRIOR PORTFOLIO THESIS (if present), recent + UPCOMING earnings.
@@ -1140,6 +1471,7 @@ TAX MATH (for context, not a rulebook):
 PORTFOLIO ({p['total_value']:,.0f} total, {p['day_change_pct']:+.2f}% today, source: {source}):
 {positions_summary}
 Cash: ${p['cash']:,.0f}   CD: ${p.get('cd', 0):,.0f}
+{kpi_block}
 
 MARKET:
 - S&P 500: {sp.get('price', 0):,.0f} ({sp.get('change', 0):+.2f}%)

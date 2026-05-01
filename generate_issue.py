@@ -185,6 +185,61 @@ def compute_rsi(prices, window=14):
     return 100 - (100 / (1 + rs))
 
 
+def compute_kpi_metrics(positions, cash, cd):
+    """Build a YTD daily portfolio-value series using current shares × historical
+    closes, then derive YTD return, alpha vs S&P, Sharpe, max drawdown.
+
+    Approximation note: uses CURRENT shares applied historically — not exact (you
+    may have added/trimmed mid-year). Treat as directional, not audit-grade.
+    Returns None on failure so the renderer gracefully omits the banner."""
+    try:
+        import pandas as pd
+        import numpy as np
+        all_hist = {}
+        sym_to_shares = {}
+        for p in positions:
+            sym = p["symbol"]
+            sym_to_shares[sym] = float(p.get("shares", 0))
+            try:
+                h = yf.Ticker(sym).history(period="ytd")
+                if not h.empty:
+                    all_hist[sym] = h["Close"]
+            except Exception:
+                continue
+        if not all_hist:
+            return None
+        df = pd.DataFrame(all_hist).ffill().bfill()
+        port_value = pd.Series(0.0, index=df.index)
+        for sym in df.columns:
+            port_value = port_value + df[sym] * sym_to_shares.get(sym, 0)
+        port_value = port_value + float(cash) + float(cd)
+        if len(port_value) < 2:
+            return None
+        port_returns = port_value.pct_change().dropna()
+        if len(port_returns) < 2:
+            return None
+        ytd_return_pct = float((port_value.iloc[-1] / port_value.iloc[0] - 1) * 100)
+        rf_daily = 0.04 / 252
+        excess = port_returns - rf_daily
+        sharpe = float(excess.mean() / excess.std() * np.sqrt(252)) if float(excess.std()) > 0 else 0.0
+        running_max = port_value.cummax()
+        drawdown = (port_value - running_max) / running_max
+        max_dd_pct = float(drawdown.min() * 100)
+        # Benchmark
+        sp = yf.Ticker("^GSPC").history(period="ytd")["Close"]
+        sp500_ytd_pct = float((sp.iloc[-1] / sp.iloc[0] - 1) * 100) if len(sp) >= 2 else 0.0
+        alpha_pct = ytd_return_pct - sp500_ytd_pct
+        return {
+            "ytd_return_pct": ytd_return_pct,
+            "sp500_ytd_pct": sp500_ytd_pct,
+            "alpha_pct": alpha_pct,
+            "sharpe": sharpe,
+            "max_dd_pct": max_dd_pct,
+        }
+    except Exception:
+        return None
+
+
 def gather_data():
     """Gather all market and portfolio data for the issue."""
     data = {"generated_at": datetime.now().isoformat(), "sections": {}}
@@ -279,6 +334,7 @@ def gather_data():
     if live_liquidation_value > 0:
         total_value = live_liquidation_value
 
+    kpi = compute_kpi_metrics(enriched, cash, cd)
     data["portfolio"] = {
         "total_value": total_value,
         "total_gain": total_gain,
@@ -290,6 +346,7 @@ def gather_data():
         "positions": sorted(enriched, key=lambda x: -x["value"]),
         "source": portfolio_source,
         "source_note": portfolio_source_note,
+        "kpi": kpi,  # may be None if YTD computation failed
     }
 
     # Market data
@@ -501,7 +558,86 @@ def _render_predictions(predictions):
 </div>'''
 
 
-def render_html(data, analysis_text=None, password=None, opus_html=None, opus_opps_html=None, opus_conclusion_html=None):
+def _render_scorecard_html(positions):
+    """Compact 'last 7 days of calls' scorecard pulled from data/decisions.jsonl.
+    Cross-references current Schwab share counts to show whether the user acted."""
+    try:
+        from decision_journal import load_recent_decisions
+    except Exception:
+        return ""
+    decisions = load_recent_decisions(days=7)
+    if not decisions:
+        return ""
+    cur_prices = {p["symbol"].upper(): float(p["price"]) for p in positions}
+    cur_shares = {p["symbol"].upper(): float(p.get("shares", 0)) for p in positions}
+    # Show oldest first so the eye scans the time order
+    decisions_sorted = sorted(decisions, key=lambda r: r.get("issue_date", ""))
+    rows_html = ""
+    for r in decisions_sorted:
+        sym = r["symbol"]
+        typ = r["type"]
+        date = r.get("issue_date", "?")
+        conv = r.get("conviction", "?")
+        then = r.get("price_at_call")
+        now = cur_prices.get(sym)
+        prior_sh = r.get("shares_at_call")
+        cur_sh = cur_shares.get(sym)
+        if now is not None and then:
+            move_pct = (now / then - 1) * 100
+            move_color = "#10b981" if move_pct >= 0 else "#ef4444"
+            move_str = f"{'+' if move_pct >= 0 else ''}{move_pct:.1f}%"
+        else:
+            move_color = "#6b7280"
+            move_str = "—"
+        # Execution flag
+        if typ in ("BUY", "ADD", "SELL", "TRIM") and prior_sh is not None and cur_sh is not None:
+            if abs(float(prior_sh) - float(cur_sh)) < 0.5:
+                acted_html = '<span class="sc-acted-no">— no action —</span>'
+            else:
+                delta = float(cur_sh) - float(prior_sh)
+                acted_html = f'<span class="sc-acted-yes">acted ({delta:+.0f})</span>'
+        else:
+            acted_html = '<span class="sc-acted-na">—</span>'
+
+        type_color = {
+            "BUY": "#10b981", "ADD": "#10b981", "SELL": "#ef4444",
+            "TRIM": "#f59e0b", "HOLD": "#6b7280", "WATCH": "#8b5cf6",
+            "NO ACTION": "#4b5563",
+        }.get(typ, "#6b7280")
+        conv_color = {"HIGH": "#10b981", "MEDIUM": "#f59e0b", "LOW": "#6b7280"}.get(conv, "#6b7280")
+
+        rows_html += f'''
+        <div class="sc-row">
+          <span class="sc-date">{date[5:]}</span>
+          <span class="sc-sym">{sym}</span>
+          <span class="sc-type" style="color:{type_color};">{typ}</span>
+          <span class="sc-conv" style="color:{conv_color};">{conv[0]}</span>
+          <span class="sc-move" style="color:{move_color};">{move_str}</span>
+          <span class="sc-acted">{acted_html}</span>
+        </div>'''
+    return f'''
+      <div class="scorecard-section">
+        <div class="scorecard-header">
+          <span class="scorecard-label">7-Day Scorecard</span>
+          <span class="scorecard-tagline">Recent calls, current state, acted-or-not.</span>
+        </div>
+        <div class="scorecard-table">
+          <div class="sc-row sc-row-header">
+            <span class="sc-date">Date</span>
+            <span class="sc-sym">Tkr</span>
+            <span class="sc-type">Call</span>
+            <span class="sc-conv">★</span>
+            <span class="sc-move">Move</span>
+            <span class="sc-acted">Acted?</span>
+          </div>
+          {rows_html}
+        </div>
+      </div>'''
+
+
+def render_html(data, analysis_text=None, password=None,
+                opus_top_moves_html=None, opus_html=None,
+                opus_opps_html=None, opus_conclusion_html=None):
     """Render the data into a beautiful editorial magazine HTML."""
     now = datetime.now()
     p = data["portfolio"]
@@ -519,11 +655,13 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
             f'</div></div>'
         )
 
-    # Use Opus-generated analysis if available, fallback to auto-generated
+    # Build the 7-day scorecard (independent of agent state — pulls from journal)
+    scorecard_html = _render_scorecard_html(p.get("positions", []))
+
+    # Use Opus-generated analysis if available, fallback to auto-generated.
+    # Insertion order: hero-summary + thesis + cards + scorecard + action-plan + market-summary
     if opus_html:
-        analysis_html = opus_html
-        if opus_conclusion_html:
-            analysis_html += opus_conclusion_html
+        analysis_html = opus_html + scorecard_html + (opus_conclusion_html or "")
     elif analysis_text:
         paragraphs = analysis_text.strip().split("\n\n")
         analysis_html = ""
@@ -616,6 +754,41 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
         for para in paragraphs:
             if para.strip():
                 analysis_html += _card("Analysis", para.strip())
+
+    # Build the KPI banner — answers "am I winning?" at a glance.
+    kpi = p.get("kpi") or {}
+    kpi_banner_html = ""
+    if kpi:
+        ytd = kpi["ytd_return_pct"]
+        sp_ytd = kpi["sp500_ytd_pct"]
+        alpha = kpi["alpha_pct"]
+        sharpe = kpi["sharpe"]
+        max_dd = kpi["max_dd_pct"]
+        ytd_color = "#10b981" if ytd >= 0 else "#ef4444"
+        alpha_color = "#10b981" if alpha >= 0 else "#ef4444"
+        sharpe_color = "#10b981" if sharpe >= 1 else ("#f59e0b" if sharpe >= 0.5 else "#ef4444")
+        kpi_banner_html = f'''
+    <div class="kpi-banner fade-section">
+      <div class="kpi-banner-inner">
+        <div class="kpi-tile">
+          <div class="kpi-label">Portfolio YTD</div>
+          <div class="kpi-value" style="color:{ytd_color};">{ytd:+.2f}%</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">vs S&amp;P 500</div>
+          <div class="kpi-value" style="color:{alpha_color};">{alpha:+.2f}%</div>
+          <div class="kpi-sub">S&amp;P {sp_ytd:+.2f}% YTD</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Sharpe</div>
+          <div class="kpi-value" style="color:{sharpe_color};">{sharpe:.2f}</div>
+        </div>
+        <div class="kpi-tile">
+          <div class="kpi-label">Max DD</div>
+          <div class="kpi-value" style="color:#ef4444;">{max_dd:.1f}%</div>
+        </div>
+      </div>
+    </div>'''
 
     day_arrow = "▲" if p["day_change"] >= 0 else "▼"
     day_color = "#10b981" if p["day_change"] >= 0 else "#ef4444"
@@ -1342,6 +1515,203 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
     fill: #b578ff;
   }}
 
+  /* ── KPI banner (right under hero) ── */
+  .kpi-banner {{
+    background: linear-gradient(180deg, #0a0a0f 0%, #111118 100%);
+    padding: 24px 24px 32px;
+    border-bottom: 1px solid rgba(99,102,241,0.15);
+  }}
+  .kpi-banner-inner {{
+    max-width: 920px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }}
+  .kpi-tile {{
+    background: rgba(26,26,46,0.6);
+    border-radius: 12px;
+    padding: 18px 14px;
+    text-align: center;
+    border: 1px solid rgba(255,255,255,0.04);
+  }}
+  .kpi-label {{
+    color: #6b7280;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }}
+  .kpi-value {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.7rem;
+    font-weight: 900;
+    letter-spacing: -0.5px;
+    line-height: 1;
+  }}
+  .kpi-sub {{
+    color: #4b5563;
+    font-size: 0.7rem;
+    margin-top: 6px;
+    font-weight: 500;
+  }}
+
+  /* ── Top moves panel (HIGH-conviction calls, mobile hero) ── */
+  .topmoves-section {{
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 24px 32px;
+  }}
+  .topmoves-label {{
+    color: #6366f1;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    font-weight: 700;
+    font-size: 0.72rem;
+    margin-bottom: 8px;
+  }}
+  .topmoves-tagline {{
+    color: #6b7280;
+    font-size: 0.95rem;
+    margin-bottom: 24px;
+  }}
+  .topmoves-grid {{
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }}
+  .topmove-card {{
+    background: linear-gradient(135deg, rgba(26,26,46,0.9), rgba(26,26,46,0.6));
+    border-radius: 16px;
+    padding: 22px 22px 20px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 4px solid var(--accent);
+    transition: transform 0.2s ease, border-color 0.2s ease;
+  }}
+  .topmove-card:hover {{
+    transform: translateY(-2px);
+    border-color: rgba(255,255,255,0.12);
+  }}
+  .topmove-head {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }}
+  .topmove-symbol-row {{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }}
+  .topmove-symbol {{
+    font-family: 'Fraunces', Georgia, serif;
+    font-size: 1.6rem;
+    font-weight: 900;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }}
+  .topmove-type-badge {{
+    background: color-mix(in srgb, var(--badge) 18%, transparent);
+    color: var(--badge);
+    font-size: 0.7rem;
+    font-weight: 800;
+    padding: 4px 10px;
+    border-radius: 5px;
+    letter-spacing: 1.5px;
+  }}
+  .topmove-urgency {{
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 1.5px;
+  }}
+  .topmove-name {{
+    color: #6b7280;
+    font-size: 0.78rem;
+    margin-bottom: 12px;
+  }}
+  .topmove-detail {{
+    color: #d1d5db;
+    font-size: 0.95rem;
+    line-height: 1.55;
+    margin-bottom: 10px;
+  }}
+  .topmove-invalidation {{
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px dashed rgba(239,68,68,0.25);
+    color: #fca5a5;
+    font-size: 0.78rem;
+    line-height: 1.5;
+  }}
+  .topmove-invalidation-label {{
+    color: #ef4444;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }}
+
+  /* ── 7-day scorecard ── */
+  .scorecard-section {{
+    margin-top: 36px;
+    padding: 24px;
+    background: rgba(26,26,46,0.4);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.04);
+  }}
+  .scorecard-header {{
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }}
+  .scorecard-label {{
+    color: #6366f1;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    font-weight: 700;
+    font-size: 0.72rem;
+  }}
+  .scorecard-tagline {{
+    color: #6b7280;
+    font-size: 0.78rem;
+  }}
+  .scorecard-table {{
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }}
+  .sc-row {{
+    display: grid;
+    grid-template-columns: 56px 50px 60px 28px 60px 1fr;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 4px;
+    font-size: 0.85rem;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }}
+  .sc-row-header {{
+    color: #6b7280;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 600;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: 8px;
+  }}
+  .sc-date {{ color: #6b7280; font-size: 0.75rem; }}
+  .sc-sym {{ font-family: 'Fraunces', serif; font-weight: 800; color: #fff; }}
+  .sc-type {{ font-weight: 700; font-size: 0.78rem; letter-spacing: 0.5px; }}
+  .sc-conv {{ font-weight: 800; text-align: center; font-size: 0.82rem; }}
+  .sc-move {{ font-weight: 700; font-size: 0.85rem; text-align: right; }}
+  .sc-acted {{ text-align: right; font-size: 0.75rem; }}
+  .sc-acted-yes {{ color: #10b981; font-weight: 600; }}
+  .sc-acted-no {{ color: #ef4444; font-style: italic; opacity: 0.85; }}
+  .sc-acted-na {{ color: #4b5563; }}
+
   /* ── Mobile responsive ── */
   @media (max-width: 768px) {{
     .section {{ padding: 48px 20px; }}
@@ -1388,11 +1758,37 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
     button, a, .market-card, .pos-card, .analysis-card {{
       min-height: 44px;
     }}
+
+    /* KPI banner: 2x2 on mobile */
+    .kpi-banner {{ padding: 18px 16px 24px; }}
+    .kpi-banner-inner {{ grid-template-columns: repeat(2, 1fr); gap: 10px; }}
+    .kpi-tile {{ padding: 14px 10px; }}
+    .kpi-value {{ font-size: 1.4rem; }}
+    .kpi-label {{ font-size: 0.6rem; letter-spacing: 1.5px; }}
+
+    /* Top moves: single column on mobile, larger touch targets */
+    .topmoves-section {{ padding: 36px 16px 24px; }}
+    .topmoves-grid {{ grid-template-columns: 1fr; gap: 14px; }}
+    .topmove-card {{ padding: 20px 18px; }}
+    .topmove-symbol {{ font-size: 1.4rem; }}
+    .topmove-detail {{ font-size: 1rem; line-height: 1.6; }}
+
+    /* Scorecard: shrink columns on mobile, drop date prefix */
+    .scorecard-section {{ padding: 18px 14px; }}
+    .sc-row {{
+      grid-template-columns: 38px 44px 50px 22px 52px 1fr;
+      gap: 6px;
+      font-size: 0.78rem;
+    }}
+    .sc-date {{ font-size: 0.68rem; }}
+    .sc-acted {{ font-size: 0.68rem; }}
   }}
 
   @media (max-width: 380px) {{
     .market-grid {{ grid-template-columns: 1fr; }}
+    .kpi-banner-inner {{ grid-template-columns: 1fr; }}
     .hero .big-number {{ font-size: 2.2rem; }}
+    .sc-row {{ grid-template-columns: 32px 40px 44px 20px 46px 1fr; gap: 4px; font-size: 0.72rem; }}
   }}
 </style>
 </head>
@@ -1409,6 +1805,12 @@ def render_html(data, analysis_text=None, password=None, opus_html=None, opus_op
   <div class="change">{day_arrow} {"+" if p["day_change"] >= 0 else ""}${p["day_change"]:,.0f} ({p["day_change_pct"]:+.2f}%) today</div>
   <div class="pnl">All-time P&amp;L: {"+" if p["total_gain"] >= 0 else ""}${p["total_gain"]:,.0f} ({p["total_gain_pct"]:+.1f}%)</div>
 </div>
+
+<!-- KPI BANNER (am I winning?) -->
+{kpi_banner_html}
+
+<!-- TOP MOVES (HIGH-conviction CTAs) -->
+{opus_top_moves_html or ""}
 
 <!-- MARKET PULSE -->
 <div class="dark-section fade-section">
@@ -1586,7 +1988,7 @@ def main():
     from agent_compose import compose_article
     store = compose_article(data)
     if store.analysis_cards or store.actions:
-        opus_html, opus_opps_html, opus_conclusion_html = store.render(data.get("opportunities", []))
+        opus_top_moves_html, opus_html, opus_opps_html, opus_conclusion_html = store.render(data.get("opportunities", []))
         print(f"Agent produced {len(store.analysis_cards)} cards, "
               f"{len(store.opportunities)} opps, {len(store.actions)} actions")
         if store.finalized:
@@ -1607,12 +2009,17 @@ def main():
             except Exception as e:
                 print(f"Journal write failed: {e}")
     else:
-        opus_html = opus_opps_html = opus_conclusion_html = None
+        opus_top_moves_html = opus_html = opus_opps_html = opus_conclusion_html = None
         print("Agent produced no output — falling back to auto-generated analysis")
 
     print(f"Rendering HTML...")
-    html = render_html(data, analysis_text=args.analysis, opus_html=opus_html,
-                       opus_opps_html=opus_opps_html, opus_conclusion_html=opus_conclusion_html)
+    html = render_html(
+        data, analysis_text=args.analysis,
+        opus_top_moves_html=opus_top_moves_html,
+        opus_html=opus_html,
+        opus_opps_html=opus_opps_html,
+        opus_conclusion_html=opus_conclusion_html,
+    )
 
     output = issues_dir / f"{issue_date}.html"
     output.write_text(html)
