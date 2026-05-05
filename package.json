@@ -4,5 +4,8 @@
   "private": false,
   "description": "AI-powered investment portfolio magazine — daily editorial-style market analysis",
   "license": "MIT",
-  "repository": "https://github.com/Benja-Pauls/portfolio-pulse"
+  "repository": "https://github.com/Benja-Pauls/portfolio-pulse",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0"
+  }
 }

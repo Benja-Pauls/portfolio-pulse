@@ -1712,6 +1712,180 @@ def render_html(data, analysis_text=None, password=None,
   .sc-acted-no {{ color: #ef4444; font-style: italic; opacity: 0.85; }}
   .sc-acted-na {{ color: #4b5563; }}
 
+  /* ── Chat (Ask Claude) ── */
+  .chat-fab {{
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    z-index: 1000;
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    color: #fff;
+    border: none;
+    padding: 14px 20px;
+    border-radius: 100px;
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    font-size: 0.95rem;
+    box-shadow: 0 8px 28px rgba(99,102,241,0.45);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }}
+  .chat-fab:hover {{ transform: translateY(-2px); box-shadow: 0 10px 32px rgba(99,102,241,0.55); }}
+  .chat-fab:active {{ transform: translateY(0); }}
+  .chat-fab svg {{ width: 18px; height: 18px; }}
+
+  .chat-panel {{
+    position: fixed;
+    inset: 0;
+    z-index: 1001;
+    background: rgba(0,0,0,0.55);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+  }}
+  .chat-panel.open {{ display: flex; }}
+  .chat-card {{
+    background: #0f0f18;
+    width: 100%;
+    max-width: 720px;
+    height: min(85vh, 720px);
+    border-radius: 24px 24px 0 0;
+    border: 1px solid rgba(99,102,241,0.25);
+    border-bottom: none;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: slideUp 0.25s cubic-bezier(0.2,0.8,0.2,1);
+  }}
+  @keyframes slideUp {{ from {{ transform: translateY(40px); opacity: 0; }} to {{ transform: translateY(0); opacity: 1; }} }}
+  .chat-head {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }}
+  .chat-head-title {{
+    font-family: 'Fraunces', serif;
+    font-weight: 800;
+    color: #fff;
+    font-size: 1.05rem;
+  }}
+  .chat-head-sub {{
+    color: #6b7280;
+    font-size: 0.72rem;
+    margin-top: 2px;
+  }}
+  .chat-close {{
+    background: rgba(255,255,255,0.06);
+    border: 0;
+    color: #d1d5db;
+    width: 36px;
+    height: 36px;
+    border-radius: 100px;
+    cursor: pointer;
+    font-size: 1.1rem;
+  }}
+  .chat-body {{
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px 18px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    scroll-behavior: smooth;
+  }}
+  .chat-msg {{
+    max-width: 88%;
+    padding: 12px 16px;
+    border-radius: 16px;
+    line-height: 1.55;
+    font-size: 0.95rem;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+  }}
+  .chat-msg.user {{
+    align-self: flex-end;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    color: #fff;
+    border-bottom-right-radius: 6px;
+  }}
+  .chat-msg.assistant {{
+    align-self: flex-start;
+    background: rgba(26,26,46,0.85);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #e5e7eb;
+    border-bottom-left-radius: 6px;
+  }}
+  .chat-msg.error {{
+    align-self: flex-start;
+    background: rgba(239,68,68,0.12);
+    border: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5;
+    font-size: 0.88rem;
+  }}
+  .chat-suggestions {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 18px 8px;
+  }}
+  .chat-suggestion {{
+    background: rgba(99,102,241,0.08);
+    border: 1px solid rgba(99,102,241,0.25);
+    color: #a5b4fc;
+    font-size: 0.78rem;
+    padding: 6px 12px;
+    border-radius: 100px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+  }}
+  .chat-suggestion:hover {{ background: rgba(99,102,241,0.18); }}
+  .chat-input-row {{
+    display: flex;
+    gap: 10px;
+    padding: 14px 18px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    background: #0a0a0f;
+  }}
+  .chat-input {{
+    flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #fff;
+    padding: 12px 14px;
+    border-radius: 14px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    resize: none;
+    min-height: 44px;
+    max-height: 140px;
+    line-height: 1.5;
+  }}
+  .chat-input:focus {{ outline: none; border-color: rgba(99,102,241,0.5); }}
+  .chat-send {{
+    background: linear-gradient(135deg, #6366f1, #ec4899);
+    color: #fff;
+    border: 0;
+    padding: 0 18px;
+    border-radius: 14px;
+    cursor: pointer;
+    font-weight: 700;
+    font-family: 'Inter', sans-serif;
+  }}
+  .chat-send:disabled {{ opacity: 0.4; cursor: not-allowed; }}
+  .chat-typing {{
+    align-self: flex-start;
+    color: #6b7280;
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 0 4px;
+  }}
+
   /* ── Mobile responsive ── */
   @media (max-width: 768px) {{
     .section {{ padding: 48px 20px; }}
@@ -1782,6 +1956,11 @@ def render_html(data, analysis_text=None, password=None,
     }}
     .sc-date {{ font-size: 0.68rem; }}
     .sc-acted {{ font-size: 0.68rem; }}
+
+    /* Chat: full-screen panel on mobile, slightly smaller fab */
+    .chat-fab {{ right: 14px; bottom: 14px; padding: 12px 18px; font-size: 0.9rem; }}
+    .chat-card {{ height: 92vh; max-width: 100%; border-radius: 18px 18px 0 0; }}
+    .chat-msg {{ font-size: 0.92rem; max-width: 92%; }}
   }}
 
   @media (max-width: 380px) {{
@@ -1956,6 +2135,127 @@ def render_html(data, analysis_text=None, password=None,
 
 </div><!-- end #content -->
 
+<!-- ASK CLAUDE — chat with the analyst who wrote this article -->
+<button class="chat-fab" id="chatFab" aria-label="Ask Claude about this article">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+  Ask Claude
+</button>
+
+<div class="chat-panel" id="chatPanel" role="dialog" aria-modal="true" aria-labelledby="chatTitle">
+  <div class="chat-card">
+    <div class="chat-head">
+      <div>
+        <div class="chat-head-title" id="chatTitle">Follow-up with Claude</div>
+        <div class="chat-head-sub">Same analyst, full context of today's article</div>
+      </div>
+      <button class="chat-close" id="chatClose" aria-label="Close chat">×</button>
+    </div>
+    <div class="chat-body" id="chatBody">
+      <div class="chat-msg assistant">Hi Ben — I wrote this morning's edition. Ask me anything about the calls, the cash deployment plan, or the reasoning behind any recommendation.</div>
+    </div>
+    <div class="chat-suggestions" id="chatSuggestions">
+      <button class="chat-suggestion" data-q="Why did you tag the cash row HIGH conviction?">Why HIGH on cash?</button>
+      <button class="chat-suggestion" data-q="What would change your mind about the MSFT add?">What invalidates MSFT?</button>
+      <button class="chat-suggestion" data-q="If I only do one thing today, what should it be?">One move today?</button>
+    </div>
+    <div class="chat-input-row">
+      <textarea id="chatInput" class="chat-input" placeholder="Ask a follow-up…" rows="1"></textarea>
+      <button id="chatSend" class="chat-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {{
+  const fab = document.getElementById('chatFab');
+  const panel = document.getElementById('chatPanel');
+  const closeBtn = document.getElementById('chatClose');
+  const body = document.getElementById('chatBody');
+  const input = document.getElementById('chatInput');
+  const send = document.getElementById('chatSend');
+  const suggestions = document.getElementById('chatSuggestions');
+  const history = []; // {{role, content}}
+
+  const STORAGE_KEY = 'pp_chat_history_v1';
+  try {{
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    if (Array.isArray(saved) && saved.length) {{
+      saved.slice(-20).forEach((m) => {{ history.push(m); appendMsg(m.role, m.content); }});
+      suggestions.style.display = 'none';
+    }}
+  }} catch (_) {{}}
+
+  function appendMsg(role, text, cls) {{
+    const el = document.createElement('div');
+    el.className = 'chat-msg ' + (cls || role);
+    el.textContent = text;
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+    return el;
+  }}
+
+  function setBusy(busy) {{
+    send.disabled = busy;
+    input.disabled = busy;
+  }}
+
+  async function ask(text) {{
+    if (!text.trim()) return;
+    appendMsg('user', text);
+    history.push({{ role: 'user', content: text }});
+    suggestions.style.display = 'none';
+    input.value = '';
+    input.style.height = 'auto';
+    setBusy(true);
+    const typing = appendMsg('assistant', 'Thinking…', 'typing');
+    typing.className = 'chat-typing';
+    try {{
+      const r = await fetch('/api/chat', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{ messages: history }}),
+        credentials: 'same-origin',
+      }});
+      typing.remove();
+      const j = await r.json();
+      if (!r.ok) {{
+        appendMsg('assistant', j.error || ('HTTP ' + r.status), 'error');
+        history.pop(); // drop the user msg from history so retry works
+        return;
+      }}
+      appendMsg('assistant', j.reply || '(empty response)');
+      history.push({{ role: 'assistant', content: j.reply || '' }});
+      try {{ localStorage.setItem(STORAGE_KEY, JSON.stringify(history.slice(-20))); }} catch (_) {{}}
+    }} catch (e) {{
+      typing.remove();
+      appendMsg('assistant', 'Network error: ' + (e.message || e), 'error');
+      history.pop();
+    }} finally {{
+      setBusy(false);
+      input.focus();
+    }}
+  }}
+
+  fab.addEventListener('click', () => {{ panel.classList.add('open'); setTimeout(() => input.focus(), 100); }});
+  closeBtn.addEventListener('click', () => panel.classList.remove('open'));
+  panel.addEventListener('click', (e) => {{ if (e.target === panel) panel.classList.remove('open'); }});
+  document.addEventListener('keydown', (e) => {{ if (e.key === 'Escape') panel.classList.remove('open'); }});
+
+  send.addEventListener('click', () => ask(input.value));
+  input.addEventListener('keydown', (e) => {{
+    if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); ask(input.value); }}
+  }});
+  input.addEventListener('input', () => {{
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 140) + 'px';
+  }});
+  suggestions.addEventListener('click', (e) => {{
+    const q = e.target?.dataset?.q;
+    if (q) ask(q);
+  }});
+}})();
+</script>
+
 {password_script}
 
 </body>
@@ -1985,8 +2285,8 @@ def main():
         print(f"  recent earnings: {[e['symbol'] for e in data['recent_earnings']]}")
 
     print(f"Running agent loop (Claude Opus 4.7 with tools)...")
-    from agent_compose import compose_article
-    store = compose_article(data)
+    from agent_compose import compose_article, save_chat_context
+    store, system_prompt = compose_article(data)
     if store.analysis_cards or store.actions:
         opus_top_moves_html, opus_html, opus_opps_html, opus_conclusion_html = store.render(data.get("opportunities", []))
         print(f"Agent produced {len(store.analysis_cards)} cards, "
@@ -2008,6 +2308,12 @@ def main():
                     print(f"Wrote thesis to journal")
             except Exception as e:
                 print(f"Journal write failed: {e}")
+        # Persist the agent's reasoning context for the on-page chat (api/chat.js)
+        try:
+            save_chat_context(store, data, system_prompt, issue_date)
+            print(f"Wrote chat context to chat-contexts/{issue_date}.json")
+        except Exception as e:
+            print(f"Chat context write failed: {e}")
     else:
         opus_top_moves_html = opus_html = opus_opps_html = opus_conclusion_html = None
         print("Agent produced no output — falling back to auto-generated analysis")

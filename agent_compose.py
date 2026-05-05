@@ -1492,22 +1492,97 @@ BOTTOMING SCAN (non-portfolio tickers showing oversold + low-in-range):
 # Agent loop
 # ---------------------------------------------------------------------------
 
-def compose_article(data: dict, *, verbose: bool = True) -> ArticleStore:
-    """Run the agent loop. Returns the ArticleStore (may be empty if the API
-    key is missing or the loop fails — caller should fall back accordingly)."""
+def save_chat_context(store: ArticleStore, data: dict, system_prompt: str, issue_date: str) -> None:
+    """Persist the agent's reasoning context so the on-page chat can answer
+    follow-ups using the same investment framework + portfolio state.
+
+    Writes to chat-contexts/{date}.json and chat-contexts/latest.json. These live
+    OUTSIDE /public so they're bundled with the Vercel deployment (accessible to
+    api/chat.js) but not served as static files."""
+    chat_dir = PORTFOLIO_PULSE_DIR / "chat-contexts"
+    chat_dir.mkdir(exist_ok=True)
+    p = data.get("portfolio", {})
+    payload = {
+        "issue_date": issue_date,
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "system_prompt": system_prompt,
+        "article": {
+            "hero_summary": store.hero_summary,
+            "portfolio_thesis": store.portfolio_thesis,
+            "market_summary": store.market_summary,
+            "analysis_cards": [
+                {"icon": c.icon, "label": c.label, "title": c.title, "body": c.body, "sources": c.sources}
+                for c in store.analysis_cards
+            ],
+            "opportunities": [
+                {"symbol": o.symbol, "headline": o.headline, "analysis": o.analysis,
+                 "verdict": o.verdict, "sources": o.sources}
+                for o in store.opportunities
+            ],
+            "actions": [
+                {"symbol": a.symbol, "name": a.name, "type": a.type, "detail": a.detail,
+                 "urgency": a.urgency, "conviction": a.conviction}
+                for a in store.actions
+            ],
+        },
+        "portfolio": {
+            "total_value": p.get("total_value"),
+            "cash": p.get("cash"),
+            "cd": p.get("cd"),
+            "day_change": p.get("day_change"),
+            "day_change_pct": p.get("day_change_pct"),
+            "total_gain": p.get("total_gain"),
+            "total_gain_pct": p.get("total_gain_pct"),
+            "kpi": p.get("kpi"),
+            "positions": [
+                {k: v for k, v in pos.items() if k not in ("sparkline",)}
+                for pos in p.get("positions", [])
+            ],
+        },
+        "market": data.get("market", {}),
+        "macro": data.get("macro", {}),
+        "recent_earnings": data.get("recent_earnings", []),
+        "upcoming_earnings": data.get("upcoming_earnings", []),
+        "predictions": data.get("predictions", [])[:8],
+    }
+    # Make it JSON-safe (numpy/pandas types from yfinance can leak in)
+    def _coerce(o):
+        if isinstance(o, (str, int, float, bool, type(None))):
+            return o
+        if isinstance(o, dict):
+            return {str(k): _coerce(v) for k, v in o.items()}
+        if isinstance(o, (list, tuple)):
+            return [_coerce(v) for v in o]
+        try:
+            f = float(o)
+            return f if f == f else None  # NaN → None
+        except (TypeError, ValueError):
+            return str(o)
+
+    payload = _coerce(payload)
+    text = json.dumps(payload, indent=2)
+    (chat_dir / f"{issue_date}.json").write_text(text)
+    (chat_dir / "latest.json").write_text(text)
+
+
+def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, str]:
+    """Run the agent loop. Returns (store, system_prompt). Store may be empty if
+    the API key is missing or the loop fails — caller should fall back. The
+    system_prompt is returned so the caller can persist it for the chat
+    follow-up endpoint."""
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     store = ArticleStore()
     if not api_key:
         if verbose:
             print("[agent_compose] ANTHROPIC_API_KEY missing — skipping agent loop")
-        return store
+        return store, ""
 
     try:
         import anthropic
     except ImportError:
         if verbose:
             print("[agent_compose] anthropic SDK not installed")
-        return store
+        return store, ""
 
     client = anthropic.Anthropic(api_key=api_key)
     system_text = build_system_prompt(data)
@@ -1605,4 +1680,4 @@ def compose_article(data: dict, *, verbose: bool = True) -> ArticleStore:
             f"[agent_compose] cache: read={cache_stats['reads']:,} tok, "
             f"wrote={cache_stats['writes']:,} tok"
         )
-    return store
+    return store, system_text
