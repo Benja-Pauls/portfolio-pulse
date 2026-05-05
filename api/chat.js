@@ -14,10 +14,12 @@ function isAuthed(req) {
 }
 
 function loadContext() {
-  // Try a few candidate locations — Vercel deploy puts files at /var/task or similar.
+  // chat-contexts now live in api/_chat-contexts so Vercel auto-bundles them
+  // with this function (no includeFiles config needed).
   const candidates = [
-    path.join(process.cwd(), 'chat-contexts', 'latest.json'),
-    path.join(__dirname, '..', 'chat-contexts', 'latest.json'),
+    path.join(__dirname, '_chat-contexts', 'latest.json'),
+    path.join(process.cwd(), 'api', '_chat-contexts', 'latest.json'),
+    path.join(process.cwd(), '_chat-contexts', 'latest.json'),
   ];
   for (const p of candidates) {
     try {

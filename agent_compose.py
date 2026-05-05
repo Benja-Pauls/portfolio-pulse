@@ -1499,8 +1499,11 @@ def save_chat_context(store: ArticleStore, data: dict, system_prompt: str, issue
     Writes to chat-contexts/{date}.json and chat-contexts/latest.json. These live
     OUTSIDE /public so they're bundled with the Vercel deployment (accessible to
     api/chat.js) but not served as static files."""
-    chat_dir = PORTFOLIO_PULSE_DIR / "chat-contexts"
-    chat_dir.mkdir(exist_ok=True)
+    # Write into api/_chat-contexts/ so Vercel auto-bundles them with the
+    # api/chat.js function (the leading underscore keeps Vercel from treating
+    # the directory as a route). Avoids needing vercel.json includeFiles config.
+    chat_dir = PORTFOLIO_PULSE_DIR / "api" / "_chat-contexts"
+    chat_dir.mkdir(parents=True, exist_ok=True)
     p = data.get("portfolio", {})
     payload = {
         "issue_date": issue_date,
