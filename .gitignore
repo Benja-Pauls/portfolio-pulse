@@ -12,3 +12,4 @@ node_modules/
 /index.html
 /2*.html
 data/
+chat-contexts/
