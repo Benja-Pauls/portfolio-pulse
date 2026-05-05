@@ -328,6 +328,17 @@ def gather_data():
     total_cost = sum(p["cost"] for p in enriched)
     day_change = sum((p["day_chg"] / 100) * p["value"] for p in enriched)
 
+    # Defensive: if more than half the positions failed to enrich (yfinance
+    # rate-limit, network blip, etc.) the resulting article would show a
+    # garbage total ($cash+$cd only). Refuse to proceed — don't ship a broken
+    # article. Caller in main() will see the exception and skip deploy.
+    if positions and len(enriched) < max(1, len(positions) // 2):
+        raise RuntimeError(
+            f"yfinance enrichment failed for too many positions "
+            f"({len(enriched)}/{len(positions)} succeeded). Aborting to avoid "
+            "publishing an article with a wrong total. Retry in a few minutes."
+        )
+
     # Prefer Schwab's liquidationValue when going live — it's the same number the
     # Schwab UI shows and includes anything we'd otherwise miss (CDs, accrued
     # interest, etc.). Falls back to manual recomposition for the hardcoded path.
@@ -2280,7 +2291,14 @@ def main():
     public_dir.mkdir(exist_ok=True)
 
     print(f"Gathering market data...")
-    data = gather_data()
+    try:
+        data = gather_data()
+    except RuntimeError as e:
+        # Defensive: yfinance enrichment failed for too many positions. Don't
+        # overwrite the previous good article with a broken one. Cron will retry
+        # at the next scheduled fire.
+        print(f"ABORT: {e}")
+        return None
     if data.get("recent_earnings"):
         print(f"  recent earnings: {[e['symbol'] for e in data['recent_earnings']]}")
 
