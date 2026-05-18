@@ -133,6 +133,7 @@ LABEL_COLORS = {
     "PORTFOLIO": "#ec4899",
     "REBALANCE": "#ec4899",
     "THESIS UPDATE": "#6366f1",
+    "SMART MONEY": "#14b8a6",   # teal — distinct from EARNINGS/POSITION categories
 }
 
 VERDICT_COLORS = {"BUY": "#10b981", "WATCH": "#f59e0b", "AVOID": "#ef4444"}
@@ -512,6 +513,34 @@ def tool_definitions() -> list[dict]:
             },
         },
         {
+            "name": "fetch_political_trades",
+            "description": (
+                "Get disclosed congressional stock trades (STOCK Act filings) "
+                "from House Stock Watcher + Senate Stock Watcher. Pass a "
+                "symbol to filter; omit for top recent activity across all "
+                "tickers. Lagging signal (30-45 day disclosure window) but "
+                "useful for: (1) detecting committee-driven accumulation "
+                "ahead of policy moves, (2) bipartisan buy clusters in a "
+                "single ticker — stronger than RSI alone. Returns the count "
+                "of unique members trading, party + chamber breakdown, and "
+                "the specific trades. Use BEFORE any new BUY/ADD and when "
+                "shaping the OPPORTUNITIES section."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Optional ticker filter. Omit for top recent activity across all tickers.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Lookback window. Default 90, max 365.",
+                    },
+                },
+            },
+        },
+        {
             "name": "fetch_economic_calendar",
             "description": (
                 "Get upcoming major US economic releases (CPI, PCE, jobs, GDP) "
@@ -569,7 +598,9 @@ def tool_definitions() -> list[dict]:
                             "Category — one of: POSITION ALERT, MARKET SIGNAL, "
                             "EARNINGS RESULT, EARNINGS PREVIEW, TAX STRATEGY, "
                             "OPPORTUNITY, RISK WARNING, MACRO, PORTFOLIO, "
-                            "REBALANCE, THESIS UPDATE"
+                            "REBALANCE, THESIS UPDATE, SMART MONEY (use when "
+                            "congressional or corporate-insider activity drives "
+                            "the call)"
                         ),
                     },
                     "title": {"type": "string", "description": "Punchy editorial headline"},
@@ -1004,6 +1035,161 @@ _ECONOMIC_CALENDAR_2026 = [
 ]
 
 
+# Congressional / political trades — STOCK Act disclosures via the
+# House Stock Watcher + Senate Stock Watcher public S3 datasets.
+_HOUSE_STOCK_URL = "https://house-stock-watcher-data.s3-us-west-2.amazonaws.com/data/all_transactions.json"
+_SENATE_STOCK_URL = "https://senate-stock-watcher-data.s3-us-west-2.amazonaws.com/aggregate/all_transactions.json"
+_POLITICAL_CACHE = PORTFOLIO_PULSE_DIR / "data" / "political-trades-cache.json"
+_POLITICAL_CACHE_TTL_HOURS = 12
+
+
+def _normalize_house_rows(rows: list) -> list:
+    out = []
+    for r in rows or []:
+        try:
+            out.append({
+                "chamber": "House",
+                "name": (r.get("representative") or r.get("name") or "?").replace("Hon. ", ""),
+                "party": r.get("party", "?"),
+                "ticker": (r.get("ticker") or "").upper().strip(),
+                "asset": r.get("asset_description", "")[:80],
+                "type": (r.get("type") or "").lower(),
+                "amount": r.get("amount", "?"),
+                "trade_date": r.get("transaction_date") or r.get("disclosure_date"),
+                "owner": r.get("owner", "?"),
+            })
+        except Exception:
+            continue
+    return out
+
+
+def _normalize_senate_rows(rows: list) -> list:
+    out = []
+    for r in rows or []:
+        try:
+            out.append({
+                "chamber": "Senate",
+                "name": r.get("senator") or r.get("name") or "?",
+                "party": r.get("party", "?"),
+                "ticker": (r.get("ticker") or "").upper().strip(),
+                "asset": r.get("asset_description", "")[:80],
+                "type": (r.get("type") or "").lower(),
+                "amount": r.get("amount", "?"),
+                "trade_date": r.get("transaction_date"),
+                "owner": r.get("owner", "?"),
+            })
+        except Exception:
+            continue
+    return out
+
+
+def _refresh_political_cache() -> list:
+    """Hit both data sources. Returns merged rows; raises only on TOTAL failure."""
+    import time as _time
+    rows: list = []
+    for url, norm in [(_HOUSE_STOCK_URL, _normalize_house_rows), (_SENATE_STOCK_URL, _normalize_senate_rows)]:
+        try:
+            r = requests.get(url, timeout=20)
+            r.raise_for_status()
+            payload = r.json()
+            if isinstance(payload, list):
+                rows.extend(norm(payload))
+        except Exception:
+            pass
+    if not rows:
+        raise RuntimeError("both House and Senate political-trade sources failed")
+    return rows
+
+
+def _fetch_political_trades(symbol: str | None = None, days: int = 90, limit: int = 25) -> str:
+    """Return disclosed congressional trades, optionally filtered to a ticker.
+
+    Data: House Stock Watcher + Senate Stock Watcher public datasets. STOCK Act
+    requires disclosure within 30-45 days of trade, so this is a lagging signal
+    — but trades by committee members + repeated bipartisan accumulation in the
+    same ticker is a real (if imperfect) edge.
+    """
+    import time as _time
+    cache: list | None = None
+    age_hours = float("inf")
+    if _POLITICAL_CACHE.exists():
+        try:
+            age_hours = (_time.time() - _POLITICAL_CACHE.stat().st_mtime) / 3600
+            cache = json.loads(_POLITICAL_CACHE.read_text())
+        except Exception:
+            cache = None
+
+    if cache is None or age_hours > _POLITICAL_CACHE_TTL_HOURS:
+        try:
+            fresh = _refresh_political_cache()
+            _POLITICAL_CACHE.parent.mkdir(parents=True, exist_ok=True)
+            _POLITICAL_CACHE.write_text(json.dumps(fresh))
+            cache = fresh
+        except Exception as e:
+            if cache is None:
+                return f"ERROR: political trades unavailable and no cache: {e}"
+            # else fall through with stale cache
+
+    from datetime import timedelta as _td
+    today = datetime.now().date()
+    cutoff = today - _td(days=days)
+    matches: list = []
+    for row in cache:
+        td = row.get("trade_date")
+        if not td:
+            continue
+        try:
+            d = datetime.strptime(td, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if d < cutoff:
+            continue
+        if symbol and row.get("ticker", "").upper() != symbol.upper():
+            continue
+        matches.append((d, row))
+
+    if not matches:
+        scope = f"for {symbol.upper()}" if symbol else "across all tickers"
+        return f"No congressional trades disclosed {scope} in the last {days} days."
+
+    matches.sort(key=lambda x: x[0], reverse=True)
+    matches = matches[:limit]
+
+    lines = []
+    if symbol:
+        buys = sum(1 for _, r in matches if "purchase" in r["type"])
+        sells = sum(1 for _, r in matches if "sale" in r["type"])
+        people = sorted({r["name"] for _, r in matches})
+        chambers = sorted({r["chamber"] for _, r in matches})
+        parties = sorted({r["party"] for _, r in matches if r["party"] not in ("?", "")})
+        lines.append(
+            f"Congressional trades for {symbol.upper()} (last {days}d, {len(matches)} shown):"
+        )
+        lines.append(
+            f"  Summary: {buys} buys / {sells} sells by {len(people)} unique members "
+            f"({'+'.join(chambers)}; parties: {', '.join(parties) or '?'})"
+        )
+        lines.append("")
+    else:
+        lines.append(f"Top {len(matches)} congressional trades (last {days} days, all tickers):")
+
+    for d, r in matches:
+        chamber = r["chamber"][0]  # H or S
+        party = (r.get("party") or "?")[0]
+        action = r["type"][:3].upper() or "?"
+        name_short = r["name"][:24]
+        tkr = r["ticker"] or "—"
+        owner = (r.get("owner") or "").lower()
+        owner_tag = f" ({owner})" if owner and owner not in ("self", "?", "") else ""
+        lines.append(
+            f"  {d.isoformat()} [{chamber}/{party}] {name_short:24.24} "
+            f"{action:3} {tkr:5} {r['amount']}{owner_tag}"
+        )
+    if age_hours > _POLITICAL_CACHE_TTL_HOURS:
+        lines.append(f"\n  ⚠ cache is {age_hours:.1f}h old; refresh failed; data may be stale.")
+    return "\n".join(lines)
+
+
 def _fetch_economic_calendar(days_ahead: int = 30) -> str:
     """Return upcoming major US economic releases / Fed events in next N days.
     Use this when proposing a cash-deployment plan or "wait until X" thesis —
@@ -1229,6 +1415,11 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
         )
     if name == "fetch_economic_calendar":
         return _fetch_economic_calendar(min(args.get("days_ahead", 30), 90))
+    if name == "fetch_political_trades":
+        return _fetch_political_trades(
+            args.get("symbol"),
+            min(args.get("days", 90), 365),
+        )
 
     if name == "set_hero_summary":
         store.hero_summary = args["text"].strip()
@@ -1444,16 +1635,24 @@ ABSOLUTE RULES:
    - Thesis broken OR a clearly superior opportunity exists → SELL even at the short-term rate. The after-tax outcome of cutting a deteriorating position beats riding it down to "save tax".
    - Use tax as a TIE-BREAKER between roughly equivalent options, never as a trump card.
 5. POST-EARNINGS REACTIONS ARE THE HIGHEST-PRIORITY CONTENT. If a holding reported in the last 14 days, you MUST: (a) call fetch_earnings to confirm the actuals, (b) call fetch_news to read the reaction, (c) write a dedicated analysis card with label "EARNINGS RESULT", (d) make a clear hold/trim/sell call in that holding's action row. Same applies in mirror image for UPCOMING earnings within 14 days: pre-position the call before the print.
-6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, fetch_options_chain, fetch_economic_calendar, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. If you're uncertain about a price, an insider trade, an analyst target, or what the market did today — look it up. With significant idle cash, evaluate cash-secured puts via fetch_options_chain — getting paid premium to wait at your declared entry is often dominant over a market-order add. Before any "wait for FOMC/CPI" thesis, call fetch_economic_calendar so the date is concrete.
-7. GRADE PAST CALLS ADVERSARIALLY. The PRIOR RECOMMENDATIONS block shows what the previous edition's analyst recommended, plus where the price has moved AND whether the user actually executed (USER DID NOT ACT vs USER ACTED). Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO". For each prior call, before grading, write the strongest case it was WRONG: for every BUY/ADD, what would a bear say? For every HOLD, why should it have been a TRIM? For every SELL/TRIM, was it premature? Then judge which side has the stronger argument given today's data. You have NO EGO invested in prior calls — they are data, not your positions. A different analyst writing tomorrow's edition would happily reverse them; you should have the same freedom. If you find yourself defending a prior call mostly because it was your call, REVERSE it.
-8. YOU ISSUE RECOMMENDATIONS, NOT TRADES. You have no trade-execution permission. The user reads the article and decides independently. Past calls are advice that may or may not have been acted on. NEVER write "we bought", "today's buy executed", "the position was trimmed", "we added", "i bought", "executed cleanly" — those describe trades that did not happen. ALSO BANNED is the subtler form: "the April 30 add at $X is +1.4%" or "today's buy at $Y" — same hallucination, different surface. Reword as "the April 30 recommendation to add" or "the call to add on April 30" or "if Ben had followed the April 30 ADD". The Schwab share counts in the PORTFOLIO block are the AUTHORITATIVE record — read those numbers and use them verbatim. NEVER infer a share count from "old position + recommended add"; the recommended add likely did not happen. The PRIOR RECOMMENDATIONS block tags each call USER DID NOT ACT or USER ACTED — read it and respect it. If a record predates execution-tracking and lacks the tag, default to USER DID NOT ACT.
-9. QUANTIFY EVERY ACTION. Every BUY/ADD/SELL/TRIM action row must include a $ amount, share count, or % of position in the detail. "Add MSFT" is not enough; "Add ~5 shares (~$2,000)" is. Every SELL/TRIM must compute the explicit dollar tax cost at that position's ST/LT rate ("~$X tax at the 30.3% ST rate" or "after-tax $Y").
-10. CASH IS A POSITION. With significant idle cash, the CASH row cannot just say "hold cash". You must EITHER propose a concrete deployment plan ($ amount + ticker + horizon, e.g. "deploy $10K into EFV over 4 weeks on -2% S&P days") OR name a specific near-term reason to defer (FOMC decision in N days, CPI release, earnings event, vol regime). Idle cash without a thesis is the silent expensive default.
-11. CONVICTION IS REQUIRED AND HONEST. Each action row carries HIGH/MEDIUM/LOW conviction. HIGH means you'd act today and you'd bet your own money. MEDIUM means lean toward action. LOW means noise. Use HIGH sparingly — at most 2-3 per issue. But you MUST tag at least one action HIGH; if everything is MEDIUM you're hedging instead of leading.
-12. SET A PORTFOLIO THESIS. Call set_portfolio_thesis once with a 3-5 sentence concrete positioning view that ties the action plan together. NOT "cautiously optimistic" or "balanced approach"; YES "Tilted to large-cap value via OEF/EFV; 16% gold sized for inflation stickiness; 22% cash deployable on S&P -3% days." This persists across editions; future you will grade it. The PRIOR PORTFOLIO THESIS block (if present) shows what the previous edition committed to — grade it adversarially in the THESIS UPDATE card.
-13. SELF-CONSISTENCY. Before calling finalize_article, re-read your cards and action rows. If two cards make contradictory claims (e.g., "rotate to defensives" + "lean into AI capex"), revise. The edition must be internally coherent.
-14. DEVIL'S ADVOCATE ON HIGH CONVICTION. Every HIGH-conviction action row must end with one short sentence on what would invalidate the call. Format: "Invalidated if: [specific observable]". Examples: "Invalidated if MSFT closes below $385 on volume" / "Invalidated if Q2 Azure growth comes in below 35%". Forces falsifiability — if you can't write the invalidation condition, the conviction isn't HIGH.
-15. WRITE FOR MOBILE FIRST. Ben reads this on his phone in 5 minutes. Lead with the answer, then the reasoning. Each card body: 2-4 punchy sentences max, then the action. Action-row details: under 280 characters when possible. Numbers > adjectives. The first 2 cards must be the most important: (1) THESIS UPDATE grading prior calls + thesis adversarially, (2) the highest-impact decision today (post-earnings reaction, biggest position alert, or the cash deployment).
+6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, fetch_options_chain, fetch_economic_calendar, fetch_political_trades, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. With significant idle cash, evaluate cash-secured puts via fetch_options_chain. Before any "wait for FOMC/CPI" thesis, call fetch_economic_calendar so the date is concrete.
+
+   TWO KINDS OF INSIDERS — use both:
+   (a) Corporate insiders (SEC Form 4) — via `run_cli('insider <SYMBOL>')`. CEOs/directors/10%+ owners. Material non-public info status. Use for any post-earnings reaction or single-name position alert.
+   (b) Congressional insiders (STOCK Act disclosures) — via `fetch_political_trades(symbol)`. House + Senate members and their families. Driven by committee work, lobbying contact, policy briefings. Different signal entirely.
+
+7. SMART MONEY CHECK — CALL fetch_political_trades EVERY ISSUE in TWO places:
+   (a) For each NEW BUY/ADD recommendation or any holding with day-move >3%: pass the symbol. If 3+ unique members (or bipartisan) traded the same direction in 60 days, this is real signal — surface it explicitly in the position's action row OR a dedicated analysis card with label "SMART MONEY".
+   (b) When shaping the OPPORTUNITIES section (bottoming-scan tickers + new ideas at the bottom of the article): call fetch_political_trades for EACH candidate ticker before deciding the verdict. A ticker with bipartisan accumulation + RSI 30 is a stronger BUY than RSI 30 alone. Conversely, a ticker with heavy congressional SELLING is a stronger AVOID. Cite specifics: who, when, $-band, party. If nothing notable, still mention the absence ("no notable congressional activity") so Ben knows you checked.
+8. GRADE PAST CALLS ADVERSARIALLY. The PRIOR RECOMMENDATIONS block shows what the previous edition's analyst recommended, plus where the price has moved AND whether the user actually executed (USER DID NOT ACT vs USER ACTED). Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO". For each prior call, before grading, write the strongest case it was WRONG: for every BUY/ADD, what would a bear say? For every HOLD, why should it have been a TRIM? For every SELL/TRIM, was it premature? Then judge which side has the stronger argument given today's data. You have NO EGO invested in prior calls — they are data, not your positions. A different analyst writing tomorrow's edition would happily reverse them; you should have the same freedom. If you find yourself defending a prior call mostly because it was your call, REVERSE it.
+9. YOU ISSUE RECOMMENDATIONS, NOT TRADES. You have no trade-execution permission. The user reads the article and decides independently. Past calls are advice that may or may not have been acted on. NEVER write "we bought", "today's buy executed", "the position was trimmed", "we added", "i bought", "executed cleanly" — those describe trades that did not happen. ALSO BANNED is the subtler form: "the April 30 add at $X is +1.4%" or "today's buy at $Y" — same hallucination, different surface. Reword as "the April 30 recommendation to add" or "the call to add on April 30" or "if Ben had followed the April 30 ADD". The Schwab share counts in the PORTFOLIO block are the AUTHORITATIVE record — read those numbers and use them verbatim. NEVER infer a share count from "old position + recommended add"; the recommended add likely did not happen. The PRIOR RECOMMENDATIONS block tags each call USER DID NOT ACT or USER ACTED — read it and respect it. If a record predates execution-tracking and lacks the tag, default to USER DID NOT ACT.
+10. QUANTIFY EVERY ACTION. Every BUY/ADD/SELL/TRIM action row must include a $ amount, share count, or % of position in the detail. "Add MSFT" is not enough; "Add ~5 shares (~$2,000)" is. Every SELL/TRIM must compute the explicit dollar tax cost at that position's ST/LT rate ("~$X tax at the 30.3% ST rate" or "after-tax $Y").
+11. CASH IS A POSITION. With significant idle cash, the CASH row cannot just say "hold cash". You must EITHER propose a concrete deployment plan ($ amount + ticker + horizon, e.g. "deploy $10K into EFV over 4 weeks on -2% S&P days") OR name a specific near-term reason to defer (FOMC decision in N days, CPI release, earnings event, vol regime). Idle cash without a thesis is the silent expensive default.
+12. CONVICTION IS REQUIRED AND HONEST. Each action row carries HIGH/MEDIUM/LOW conviction. HIGH means you'd act today and you'd bet your own money. MEDIUM means lean toward action. LOW means noise. Use HIGH sparingly — at most 2-3 per issue. But you MUST tag at least one action HIGH; if everything is MEDIUM you're hedging instead of leading.
+13. SET A PORTFOLIO THESIS. Call set_portfolio_thesis once with a 3-5 sentence concrete positioning view that ties the action plan together. NOT "cautiously optimistic" or "balanced approach"; YES "Tilted to large-cap value via OEF/EFV; 16% gold sized for inflation stickiness; 22% cash deployable on S&P -3% days." This persists across editions; future you will grade it. The PRIOR PORTFOLIO THESIS block (if present) shows what the previous edition committed to — grade it adversarially in the THESIS UPDATE card.
+14. SELF-CONSISTENCY. Before calling finalize_article, re-read your cards and action rows. If two cards make contradictory claims (e.g., "rotate to defensives" + "lean into AI capex"), revise. The edition must be internally coherent.
+15. DEVIL'S ADVOCATE ON HIGH CONVICTION. Every HIGH-conviction action row must end with one short sentence on what would invalidate the call. Format: "Invalidated if: [specific observable]". Examples: "Invalidated if MSFT closes below $385 on volume" / "Invalidated if Q2 Azure growth comes in below 35%". Forces falsifiability — if you can't write the invalidation condition, the conviction isn't HIGH.
+16. WRITE FOR MOBILE FIRST. Ben reads this on his phone in 5 minutes. Lead with the answer, then the reasoning. Each card body: 2-4 punchy sentences max, then the action. Action-row details: under 280 characters when possible. Numbers > adjectives. The first 2 cards must be the most important: (1) THESIS UPDATE grading prior calls + thesis adversarially, (2) the highest-impact decision today (post-earnings reaction, biggest position alert, or the cash deployment).
 
 WORKFLOW:
 1. Skim the data block below — including PRIOR RECOMMENDATIONS, PRIOR PORTFOLIO THESIS (if present), recent + UPCOMING earnings.
