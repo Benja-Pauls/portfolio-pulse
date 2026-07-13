@@ -513,6 +513,68 @@ def tool_definitions() -> list[dict]:
             },
         },
         {
+            "name": "fetch_technical_analysis",
+            "description": (
+                "Multi-timeframe SUPPORT / RESISTANCE + trend structure. "
+                "Returns: swing highs/lows across 60d/6mo/1yr, moving-average "
+                "trend on 3 timeframes (short/mid/long), higher-highs vs "
+                "lower-lows classification, distance to nearest S/R levels, "
+                "volume-at-price clusters. USE THIS BEFORE any BUY/ADD on a "
+                "single stock. RSI oversold alone is NOT enough — you must "
+                "verify trend structure. A stock in a multi-timeframe "
+                "DOWNTREND with lower highs + lower lows is a knife-catch "
+                "regardless of RSI reading."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Ticker e.g. ISRG"}
+                },
+                "required": ["symbol"],
+            },
+        },
+        {
+            "name": "fetch_options_sentiment",
+            "description": (
+                "Options market sentiment across THREE timeframes: near "
+                "(0-14d), mid (14-45d), long (45d+). Returns put/call ratio "
+                "(OI + volume), implied vol skew, max pain, and a sentiment "
+                "reading (BULLISH / NEUTRAL / BEARISH) per timeframe. This "
+                "is 'the professional traders' poll' — the sentiment is set "
+                "by whoever is actually risking capital, not retail chatter. "
+                "USE THIS BEFORE any BUY/ADD or SELL/TRIM: P/C ratio near 1.0 "
+                "= no smart-money accumulation despite RSI oversold. P/C < 0.7 "
+                "= real accumulation. P/C > 1.2 = real hedging / shorting."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Ticker e.g. MSFT"}
+                },
+                "required": ["symbol"],
+            },
+        },
+        {
+            "name": "fetch_expert_consensus",
+            "description": (
+                "The 'people who know more than you' signal. Returns: Wall "
+                "Street analyst mean/high/low targets + count + BUY/HOLD/"
+                "SELL recommendation, key fundamentals (P/E, growth, "
+                "margins, ROE), and SEC Form 4 insider activity (parsed from "
+                "the schwab_cli 'insider' command). USE THIS BEFORE any "
+                "BUY/ADD on a single stock. Insider clusters — especially "
+                "multiple different insiders BUYING with their own cash — "
+                "is the strongest bullish signal in markets."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "symbol": {"type": "string", "description": "Ticker e.g. AAPL"}
+                },
+                "required": ["symbol"],
+            },
+        },
+        {
             "name": "fetch_political_trades",
             "description": (
                 "Get disclosed congressional stock trades (STOCK Act filings) "
@@ -1101,6 +1163,391 @@ def _refresh_political_cache() -> list:
     return rows
 
 
+def _fetch_technical_analysis(symbol: str) -> str:
+    """Multi-timeframe support/resistance + trend structure analysis. This is
+    what the ISRG trade should have caught: short-term oversold ≠ long-term
+    uptrend. Detects: swing highs/lows across 60d/6mo/1yr, moving-average
+    trend structure, higher-highs vs lower-lows, distance to nearest S/R."""
+    try:
+        import yfinance as yf
+        import pandas as pd
+        import numpy as np
+    except ImportError:
+        return "ERROR: yfinance/pandas/numpy not installed"
+
+    sym = symbol.upper()
+    t = yf.Ticker(sym)
+    try:
+        h1y = t.history(period="1y")
+        if h1y.empty or len(h1y) < 30:
+            return f"ERROR: insufficient history for {sym}"
+    except Exception as e:
+        return f"ERROR fetching history: {e}"
+
+    close = h1y["Close"]
+    high = h1y["High"]
+    low = h1y["Low"]
+    vol = h1y["Volume"]
+    cur = float(close.iloc[-1])
+
+    # Multi-timeframe SMAs — the trend structure the article missed
+    sma_20 = float(close.rolling(20).mean().iloc[-1])
+    sma_50 = float(close.rolling(50).mean().iloc[-1])
+    sma_100 = float(close.rolling(100).mean().iloc[-1])
+    sma_200 = float(close.rolling(200).mean().iloc[-1]) if len(close) >= 200 else None
+
+    def _trend(sma_short, sma_long):
+        if sma_short is None or sma_long is None:
+            return "?"
+        return "UPTREND" if sma_short > sma_long else "DOWNTREND"
+
+    short_trend = _trend(sma_20, sma_50)
+    mid_trend = _trend(sma_50, sma_100)
+    long_trend = _trend(sma_100, sma_200) if sma_200 else "?"
+
+    # Swing highs/lows — pivots where price reversed
+    # A swing high = local max over N periods on both sides
+    def _swing_points(series, window=5):
+        highs, lows = [], []
+        arr = series.values
+        for i in range(window, len(arr) - window):
+            if arr[i] == max(arr[i - window : i + window + 1]) and arr[i] > arr[i - 1]:
+                highs.append((series.index[i], float(arr[i])))
+            if arr[i] == min(arr[i - window : i + window + 1]) and arr[i] < arr[i - 1]:
+                lows.append((series.index[i], float(arr[i])))
+        return highs, lows
+
+    sw_highs_60, sw_lows_60 = _swing_points(close.tail(60), window=3)
+    sw_highs_6mo, sw_lows_6mo = _swing_points(close.tail(126), window=5)
+    sw_highs_1y, sw_lows_1y = _swing_points(close, window=8)
+
+    # Higher-highs / lower-lows structure — the key insight
+    hh_ll_structure = "?"
+    if len(sw_highs_60) >= 2 and len(sw_lows_60) >= 2:
+        recent_highs = [h[1] for h in sw_highs_60[-3:]]
+        recent_lows = [l[1] for l in sw_lows_60[-3:]]
+        higher_highs = all(recent_highs[i] < recent_highs[i + 1] for i in range(len(recent_highs) - 1))
+        lower_highs = all(recent_highs[i] > recent_highs[i + 1] for i in range(len(recent_highs) - 1))
+        higher_lows = all(recent_lows[i] < recent_lows[i + 1] for i in range(len(recent_lows) - 1))
+        lower_lows = all(recent_lows[i] > recent_lows[i + 1] for i in range(len(recent_lows) - 1))
+        if higher_highs and higher_lows:
+            hh_ll_structure = "UPTREND CONFIRMED (higher highs + higher lows)"
+        elif lower_highs and lower_lows:
+            hh_ll_structure = "DOWNTREND CONFIRMED (lower highs + lower lows)"
+        elif higher_highs and lower_lows:
+            hh_ll_structure = "EXPANDING RANGE (indecision, breakout imminent)"
+        elif lower_highs and higher_lows:
+            hh_ll_structure = "CONTRACTING RANGE (compression before move)"
+        else:
+            hh_ll_structure = "SIDEWAYS / mixed"
+
+    # Aggregate key S/R levels — union of swing points, cluster nearby ones
+    all_levels = set()
+    for _, p in sw_highs_1y + sw_lows_1y:
+        all_levels.add(round(p, 0))
+    if sma_50: all_levels.add(round(sma_50, 0))
+    if sma_100: all_levels.add(round(sma_100, 0))
+    if sma_200: all_levels.add(round(sma_200, 0))
+
+    levels_below = sorted([l for l in all_levels if l < cur], reverse=True)[:5]
+    levels_above = sorted([l for l in all_levels if l > cur])[:5]
+
+    # 52w context
+    high_52w = float(high.max())
+    low_52w = float(low.min())
+    range_pos = (cur - low_52w) / (high_52w - low_52w) * 100 if high_52w != low_52w else 50
+    dd_from_high = (cur / high_52w - 1) * 100
+
+    # Volume-at-price approximation — where has real transaction happened?
+    # Bin close prices weighted by volume
+    bins = pd.cut(close, bins=20)
+    vwp = h1y.groupby(bins, observed=True)["Volume"].sum()
+    top_vwp = vwp.nlargest(3)
+
+    lines = [
+        f"TECHNICAL ANALYSIS — {sym} @ ${cur:.2f}",
+        "",
+        "TREND STRUCTURE (the multi-timeframe view):",
+        f"  Short-term (20 vs 50 SMA):  {short_trend}   [20-SMA ${sma_20:.2f}, 50-SMA ${sma_50:.2f}]",
+        f"  Mid-term  (50 vs 100 SMA):  {mid_trend}   [100-SMA ${sma_100:.2f}]",
+    ]
+    if sma_200 is not None:
+        lines.append(f"  Long-term (100 vs 200 SMA): {long_trend}   [200-SMA ${sma_200:.2f}]")
+    lines.append(f"  Higher-high / lower-low structure (last 60d): {hh_ll_structure}")
+    lines.append("")
+    lines.append(f"52-WEEK CONTEXT:")
+    lines.append(f"  52w high: ${high_52w:.2f}   52w low: ${low_52w:.2f}   currently at {range_pos:.0f}% of range")
+    lines.append(f"  Drawdown from 52w high: {dd_from_high:+.1f}%")
+    lines.append("")
+    lines.append(f"KEY SUPPORT (levels below current price):")
+    if levels_below:
+        for lvl in levels_below:
+            dist = (lvl / cur - 1) * 100
+            lines.append(f"  ${lvl:.0f}  ({dist:+.1f}% away)")
+    else:
+        lines.append("  (no significant support below in 1yr data — floor is unclear)")
+    lines.append("")
+    lines.append(f"KEY RESISTANCE (levels above current price):")
+    if levels_above:
+        for lvl in levels_above:
+            dist = (lvl / cur - 1) * 100
+            lines.append(f"  ${lvl:.0f}  ({dist:+.1f}% away)")
+    else:
+        lines.append("  (at or near 52w high — no significant resistance above)")
+    lines.append("")
+    lines.append(f"VOLUME-AT-PRICE (where transaction volume actually clustered):")
+    for interval, v in top_vwp.items():
+        lines.append(f"  ~${interval.mid:.2f} range: {int(v):,} shares transacted")
+    lines.append("")
+    # Actionable summary
+    if long_trend == "DOWNTREND" and mid_trend == "DOWNTREND" and short_trend == "DOWNTREND":
+        lines.append("⚠ SUMMARY: All three timeframes DOWNTREND. RSI oversold does NOT overturn this.")
+        lines.append("  A 'buying the dip' thesis needs a specific catalyst — not just an oversold reading.")
+    elif long_trend == "UPTREND" and mid_trend == "UPTREND":
+        lines.append("✓ SUMMARY: Multi-timeframe uptrend intact. Dips are buyable within the trend.")
+    else:
+        lines.append("SUMMARY: Mixed timeframes. Position size accordingly and wait for confirmation.")
+
+    return "\n".join(lines)
+
+
+def _fetch_options_sentiment(symbol: str) -> str:
+    """Options market sentiment — the pro trader's poll. Put/call ratio,
+    IV skew, max pain, unusual activity. This is what the ISRG trade
+    should have checked: RSI 28 + neutral options positioning = no smart
+    money accumulation, just a knife catch."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        return "ERROR: yfinance not installed"
+
+    sym = symbol.upper()
+    t = yf.Ticker(sym)
+    try:
+        h = t.history(period="10d")
+        cur = float(h["Close"].iloc[-1]) if not h.empty else 0.0
+        avg_vol = int(h["Volume"].mean()) if not h.empty else 0
+    except Exception:
+        return f"ERROR: no price data for {sym}"
+
+    exps = list(t.options)
+    if not exps:
+        return f"No options listed for {sym}."
+
+    from datetime import datetime as _dt, timedelta as _td
+    today = _dt.now().date()
+
+    # Categorize expirations: near (0-14d), mid (14-45d), long (45d+)
+    near_exps, mid_exps, long_exps = [], [], []
+    for e in exps:
+        try:
+            d = _dt.strptime(e, "%Y-%m-%d").date()
+            days_out = (d - today).days
+            if days_out < 0:
+                continue
+            elif days_out <= 14:
+                near_exps.append(e)
+            elif days_out <= 45:
+                mid_exps.append(e)
+            else:
+                long_exps.append(e)
+        except ValueError:
+            continue
+
+    def _bucket_summary(bucket_exps, label):
+        if not bucket_exps:
+            return None
+        call_oi = put_oi = call_vol = put_vol = 0
+        call_iv_sum = put_iv_sum = call_iv_ct = put_iv_ct = 0
+        max_pain_strike = None
+        max_pain_val = None
+        for exp in bucket_exps[:3]:  # first 3 in bucket
+            try:
+                chain = t.option_chain(exp)
+            except Exception:
+                continue
+            call_oi += chain.calls["openInterest"].fillna(0).sum()
+            put_oi += chain.puts["openInterest"].fillna(0).sum()
+            call_vol += chain.calls["volume"].fillna(0).sum()
+            put_vol += chain.puts["volume"].fillna(0).sum()
+            # ATM IV — take strikes within 5% of current
+            for _, row in chain.calls.iterrows():
+                if abs(row["strike"] - cur) / cur < 0.05:
+                    iv = row.get("impliedVolatility")
+                    if iv and iv == iv:  # not NaN
+                        call_iv_sum += float(iv); call_iv_ct += 1
+            for _, row in chain.puts.iterrows():
+                if abs(row["strike"] - cur) / cur < 0.05:
+                    iv = row.get("impliedVolatility")
+                    if iv and iv == iv:
+                        put_iv_sum += float(iv); put_iv_ct += 1
+            # Max pain for the first expiry in the bucket
+            if max_pain_strike is None:
+                strikes = sorted(set(list(chain.calls["strike"]) + list(chain.puts["strike"])))
+                best = None
+                for s in strikes:
+                    call_pain = ((chain.calls["strike"] - s).clip(lower=0) * chain.calls["openInterest"].fillna(0)).sum()
+                    put_pain = ((s - chain.puts["strike"]).clip(lower=0) * chain.puts["openInterest"].fillna(0)).sum()
+                    total = call_pain + put_pain
+                    if best is None or total < best:
+                        best = total
+                        max_pain_strike = float(s)
+                        max_pain_val = total
+        pc_oi = float(put_oi) / float(call_oi) if call_oi > 0 else 0
+        pc_vol = float(put_vol) / float(call_vol) if call_vol > 0 else 0
+        call_iv = call_iv_sum / call_iv_ct * 100 if call_iv_ct else None
+        put_iv = put_iv_sum / put_iv_ct * 100 if put_iv_ct else None
+        skew = (put_iv - call_iv) if (call_iv and put_iv) else None
+
+        # Sentiment reading
+        sentiment = "NEUTRAL"
+        if pc_oi < 0.7 and pc_vol < 0.7:
+            sentiment = "BULLISH (accumulation)"
+        elif pc_oi > 1.2 or pc_vol > 1.2:
+            sentiment = "BEARISH (hedging or shorting)"
+        elif 0.7 <= pc_oi <= 1.2:
+            sentiment = "NEUTRAL (no clear positioning)"
+
+        return {
+            "label": label, "expirations_used": bucket_exps[:3],
+            "call_oi": int(call_oi), "put_oi": int(put_oi),
+            "call_vol": int(call_vol), "put_vol": int(put_vol),
+            "pc_oi": pc_oi, "pc_vol": pc_vol,
+            "atm_call_iv": call_iv, "atm_put_iv": put_iv, "skew": skew,
+            "max_pain": max_pain_strike, "sentiment": sentiment,
+        }
+
+    near = _bucket_summary(near_exps, "NEAR (0-14d)")
+    mid = _bucket_summary(mid_exps, "MID (14-45d)")
+    long_ = _bucket_summary(long_exps, "LONG (45d+)")
+
+    lines = [f"OPTIONS SENTIMENT — {sym} @ ${cur:.2f}"]
+    lines.append(f"Underlying avg volume (10d): {avg_vol:,} shares")
+    lines.append("")
+
+    for bucket in [near, mid, long_]:
+        if bucket is None:
+            continue
+        lines.append(f"═══ {bucket['label']} ═══")
+        lines.append(f"  Expirations used: {', '.join(bucket['expirations_used'])}")
+        lines.append(f"  Open Interest: {bucket['call_oi']:,} calls / {bucket['put_oi']:,} puts")
+        lines.append(f"  Volume today:  {bucket['call_vol']:,} calls / {bucket['put_vol']:,} puts")
+        lines.append(f"  Put/Call OI:    {bucket['pc_oi']:.2f}   (<0.7 bullish, >1.2 bearish)")
+        lines.append(f"  Put/Call Vol:   {bucket['pc_vol']:.2f}   (today's fresh positioning)")
+        if bucket["atm_call_iv"] and bucket["atm_put_iv"]:
+            lines.append(f"  ATM IV: calls {bucket['atm_call_iv']:.1f}% / puts {bucket['atm_put_iv']:.1f}%   skew {bucket['skew']:+.1f}% (positive = puts richer = fear)")
+        if bucket["max_pain"]:
+            dist = (bucket['max_pain'] / cur - 1) * 100
+            lines.append(f"  Max pain: ${bucket['max_pain']:.0f} ({dist:+.1f}% from spot) — options sellers profit most if price ends here")
+        lines.append(f"  → SENTIMENT: {bucket['sentiment']}")
+        lines.append("")
+
+    # Aggregate call
+    all_pc_oi = []
+    if near: all_pc_oi.append(near['pc_oi'])
+    if mid: all_pc_oi.append(mid['pc_oi'])
+    if long_: all_pc_oi.append(long_['pc_oi'])
+    avg_pc = sum(all_pc_oi) / len(all_pc_oi) if all_pc_oi else 0
+    lines.append(f"AGGREGATE P/C OI (all buckets): {avg_pc:.2f}")
+    if avg_pc < 0.7:
+        lines.append("→ Options market is BULLISH-POSITIONED. Smart money accumulating.")
+    elif avg_pc > 1.2:
+        lines.append("→ Options market is BEARISH-POSITIONED. Hedging or shorting.")
+    else:
+        lines.append("→ Options market is NEUTRAL. No conviction either direction.")
+
+    return "\n".join(lines)
+
+
+def _fetch_expert_consensus(symbol: str) -> str:
+    """Wall Street analyst consensus + insider (Form 4) activity — the two
+    'people who know more than you' signals. Analyst mean/high/low targets,
+    buy/hold/sell distribution, and recent SEC Form 4 filings from insiders."""
+    try:
+        import yfinance as yf
+    except ImportError:
+        return "ERROR: yfinance not installed"
+
+    sym = symbol.upper()
+    t = yf.Ticker(sym)
+    try:
+        info = t.info
+    except Exception as e:
+        return f"ERROR: {e}"
+
+    if not info:
+        return f"No info available for {sym}"
+
+    cur = info.get("currentPrice") or info.get("regularMarketPrice") or 0
+
+    # Analyst targets
+    mean_target = info.get("targetMeanPrice")
+    high_target = info.get("targetHighPrice")
+    low_target = info.get("targetLowPrice")
+    n_analysts = info.get("numberOfAnalystOpinions") or 0
+    recommendation = info.get("recommendationKey", "?")
+    recommendation_mean = info.get("recommendationMean")  # 1=strong buy, 5=strong sell
+
+    lines = [f"EXPERT CONSENSUS — {sym} @ ${cur:.2f}", ""]
+
+    lines.append(f"WALL STREET ANALYSTS ({n_analysts} covering):")
+    lines.append(f"  Recommendation:  {recommendation.upper()}")
+    if recommendation_mean:
+        # 1-1.5 strong buy, 1.5-2.5 buy, 2.5-3.5 hold, 3.5-4.5 sell, 4.5-5 strong sell
+        label = "?"
+        if recommendation_mean <= 1.5: label = "STRONG BUY"
+        elif recommendation_mean <= 2.5: label = "BUY"
+        elif recommendation_mean <= 3.5: label = "HOLD"
+        elif recommendation_mean <= 4.5: label = "SELL"
+        else: label = "STRONG SELL"
+        lines.append(f"  Mean rating:     {recommendation_mean:.2f} → {label}")
+
+    if mean_target:
+        upside = (mean_target / cur - 1) * 100 if cur > 0 else 0
+        lines.append(f"  Mean target:     ${mean_target:.2f}  ({upside:+.1f}% upside)")
+    if high_target:
+        upside = (high_target / cur - 1) * 100 if cur > 0 else 0
+        lines.append(f"  High target:     ${high_target:.2f}  ({upside:+.1f}%)")
+    if low_target:
+        downside = (low_target / cur - 1) * 100 if cur > 0 else 0
+        lines.append(f"  Low target:      ${low_target:.2f}  ({downside:+.1f}%)")
+    lines.append("")
+
+    # Fundamentals digest — the "is this business good" check
+    lines.append("KEY FUNDAMENTALS:")
+    pe = info.get("trailingPE")
+    fwd_pe = info.get("forwardPE")
+    rev_growth = info.get("revenueGrowth")
+    eps_growth = info.get("earningsQuarterlyGrowth")
+    margin = info.get("profitMargins")
+    roe = info.get("returnOnEquity")
+    if pe: lines.append(f"  P/E (TTM):       {pe:.1f}")
+    if fwd_pe: lines.append(f"  P/E (forward):   {fwd_pe:.1f}")
+    if rev_growth is not None: lines.append(f"  Revenue growth:  {rev_growth*100:+.1f}% YoY")
+    if eps_growth is not None: lines.append(f"  EPS growth:      {eps_growth*100:+.1f}% YoY")
+    if margin is not None: lines.append(f"  Profit margin:   {margin*100:.1f}%")
+    if roe is not None: lines.append(f"  ROE:             {roe*100:.1f}%")
+    lines.append("")
+
+    # Insider activity via existing schwab_cli insider command (SEC Form 4)
+    lines.append("INSIDER ACTIVITY (SEC Form 4 — 'the CEO knows more than you'):")
+    insider_out = _run_cli(f"insider {sym}")
+    # Truncate to first 25 lines to keep the output manageable
+    insider_short = "\n".join(insider_out.split("\n")[:25])
+    lines.append(insider_short)
+    lines.append("")
+    lines.append(
+        "INTERPRETATION GUIDE for insider data:\n"
+        "  • Cluster of BUYS by different insiders in 60d = strongest bullish signal in markets\n"
+        "  • Cluster of discretionary SELLS (not 10b5-1) by C-suite in 60d = strong bearish signal\n"
+        "  • 10b5-1 plan sells = pre-scheduled, low signal value\n"
+        "  • Option exercises with tax withholding = neutral (statutory mechanics)\n"
+        "  • Silence (no filings 60d+) = neutral"
+    )
+
+    return "\n".join(lines)
+
+
 def _fetch_political_trades(symbol: str | None = None, days: int = 90, limit: int = 25) -> str:
     """Return disclosed congressional trades, optionally filtered to a ticker.
 
@@ -1420,6 +1867,12 @@ def execute_tool(name: str, args: dict, store: ArticleStore) -> str:
             args.get("symbol"),
             min(args.get("days", 90), 365),
         )
+    if name == "fetch_technical_analysis":
+        return _fetch_technical_analysis(args["symbol"])
+    if name == "fetch_options_sentiment":
+        return _fetch_options_sentiment(args["symbol"])
+    if name == "fetch_expert_consensus":
+        return _fetch_expert_consensus(args["symbol"])
 
     if name == "set_hero_summary":
         store.hero_summary = args["text"].strip()
@@ -1635,15 +2088,59 @@ ABSOLUTE RULES:
    - Thesis broken OR a clearly superior opportunity exists → SELL even at the short-term rate. The after-tax outcome of cutting a deteriorating position beats riding it down to "save tax".
    - Use tax as a TIE-BREAKER between roughly equivalent options, never as a trump card.
 5. POST-EARNINGS REACTIONS ARE THE HIGHEST-PRIORITY CONTENT. If a holding reported in the last 14 days, you MUST: (a) call fetch_earnings to confirm the actuals, (b) call fetch_news to read the reaction, (c) write a dedicated analysis card with label "EARNINGS RESULT", (d) make a clear hold/trim/sell call in that holding's action row. Same applies in mirror image for UPCOMING earnings within 14 days: pre-position the call before the print.
-6. USE YOUR TOOLS. You have run_cli (60+ portfolio commands), fetch_earnings, fetch_news, fetch_options_chain, fetch_economic_calendar, fetch_political_trades, web_search, read_file. The single most common failure mode is writing from priors instead of pulling fresh data. With significant idle cash, evaluate cash-secured puts via fetch_options_chain. Before any "wait for FOMC/CPI" thesis, call fetch_economic_calendar so the date is concrete.
+6. USE YOUR TOOLS — including the NEW analytical layer. You have: run_cli (60+ portfolio commands), fetch_earnings, fetch_news, fetch_options_chain (income trades), fetch_economic_calendar, fetch_political_trades, web_search, read_file, AND THE NEW TRIO: fetch_technical_analysis, fetch_options_sentiment, fetch_expert_consensus. The single most common failure mode is writing from priors instead of pulling fresh data.
 
-   TWO KINDS OF INSIDERS — use both:
-   (a) Corporate insiders (SEC Form 4) — via `run_cli('insider <SYMBOL>')`. CEOs/directors/10%+ owners. Material non-public info status. Use for any post-earnings reaction or single-name position alert.
-   (b) Congressional insiders (STOCK Act disclosures) — via `fetch_political_trades(symbol)`. House + Senate members and their families. Driven by committee work, lobbying contact, policy briefings. Different signal entirely.
+   ═══ THE FIVE-SIGNAL FRAMEWORK FOR SINGLE-STOCK RECOMMENDATIONS ═══
+   Before making ANY BUY/ADD, SELL/TRIM, or non-HOLD recommendation on an individual stock, you MUST check all FIVE signals below. RSI oversold ALONE is not enough — that was the ISRG mistake (52 shares, ~$2K loss). The right framework is CONFLUENCE across independent signals:
 
-7. SMART MONEY CHECK — CALL fetch_political_trades EVERY ISSUE in TWO places:
-   (a) For each NEW BUY/ADD recommendation or any holding with day-move >3%: pass the symbol. If 3+ unique members (or bipartisan) traded the same direction in 60 days, this is real signal — surface it explicitly in the position's action row OR a dedicated analysis card with label "SMART MONEY".
-   (b) When shaping the OPPORTUNITIES section (bottoming-scan tickers + new ideas at the bottom of the article): call fetch_political_trades for EACH candidate ticker before deciding the verdict. A ticker with bipartisan accumulation + RSI 30 is a stronger BUY than RSI 30 alone. Conversely, a ticker with heavy congressional SELLING is a stronger AVOID. Cite specifics: who, when, $-band, party. If nothing notable, still mention the absence ("no notable congressional activity") so Ben knows you checked.
+   Signal 1: TECHNICAL STRUCTURE (multi-timeframe)
+     • Call fetch_technical_analysis(symbol)
+     • What matters: trend structure across short/mid/long timeframes.
+       - All three UPTREND → dips are buyable
+       - All three DOWNTREND → RSI oversold is a KNIFE, not a bottom. Do not BUY.
+       - Mixed → position size accordingly, wait for confirmation
+     • Higher-highs + higher-lows = uptrend confirmed. Lower-highs + lower-lows = downtrend confirmed. This structure OVERRIDES single-day RSI.
+     • Distance to nearest support/resistance matters. Buying 5% from resistance = bad reward:risk. Buying at validated support = good.
+
+   Signal 2: OPTIONS SENTIMENT (smart-money positioning across horizons)
+     • Call fetch_options_sentiment(symbol)
+     • What matters: PUT/CALL RATIO across near (0-14d), mid (14-45d), long (45d+).
+       - P/C ratio < 0.7 in mid + long = REAL accumulation. Bullish confluence with technicals.
+       - P/C ratio > 1.2 in mid + long = REAL hedging or shorting. Confirm sell thesis.
+       - P/C ratio near 1.0 across all buckets = NEUTRAL. Not a smart-money buy signal even if RSI oversold. This was the ISRG signal — RSI 28 with P/C ~1.0 meant nobody was positioned for the bounce.
+     • Also watch: IV skew (positive puts-over-calls = fear premium), max pain (where market makers profit — often a magnet).
+
+   Signal 3: EXPERT CONSENSUS (analysts + insiders)
+     • Call fetch_expert_consensus(symbol) — combines Wall Street analyst targets + SEC Form 4 insider data.
+     • What matters:
+       - Analyst mean target > 15% above current = real upside case
+       - Analyst mean rating STRONG BUY / BUY = professional consensus
+       - INSIDER BUYING CLUSTERS (multiple different insiders, real cash, not option exercises) = STRONGEST BULLISH SIGNAL IN MARKETS. Insiders have the best information ratio of any tracked source.
+       - INSIDER SELLING CLUSTERS by C-suite (not 10b5-1, not tax withholding on option exercises) = STRONG BEARISH SIGNAL.
+       - Silence = neutral, not bullish.
+
+   Signal 4: FUNDAMENTAL / CATALYST
+     • Call fetch_earnings and/or fetch_news
+     • What matters: earnings trend (accelerating vs decelerating), revenue growth, margin trajectory. Also: upcoming catalyst (earnings date, product launch, regulatory decision).
+     • A stock in a DOWNTREND but with accelerating fundamentals + upcoming catalyst = potential BUY (contrarian setup). Without those two, it's just falling.
+
+   Signal 5: SMART MONEY (congressional)
+     • Call fetch_political_trades(symbol)
+     • What matters: 3+ congresspeople trading same direction in 60 days = signal. Especially if bipartisan or if traders are on relevant committees (Finance, Armed Services, etc. depending on ticker).
+
+   ═══ THE CONFLUENCE RULES ═══
+   HIGH conviction BUY requires: technical UPTREND intact OR at validated support + options BULLISH sentiment (P/C < 0.7) + expert BUY consensus OR insider accumulation. THREE of five signals green minimum, no red flags.
+   HIGH conviction SELL/TRIM requires: technical DOWNTREND confirmed + options BEARISH sentiment (P/C > 1.2) OR insider selling cluster + expert HOLD/SELL. THREE of five signals red minimum.
+   If signals conflict (some green, some red) → MEDIUM conviction at most. Explain the disagreement in the card body.
+   If signals are all NEUTRAL → LOW conviction or WATCH. Do not force a call.
+
+   TWO KINDS OF INSIDERS (both still relevant):
+   (a) Corporate insiders (SEC Form 4) — captured in fetch_expert_consensus above. Also available via run_cli('insider <SYMBOL>') for deeper detail.
+   (b) Congressional insiders (STOCK Act) — via fetch_political_trades. Different lens.
+
+7. SMART MONEY / EXPERT CHECK — CALL fetch_political_trades AND fetch_expert_consensus EVERY ISSUE in TWO places:
+   (a) For each NEW BUY/ADD recommendation or any holding with day-move >3%: pass the symbol. If insider buying cluster + bipartisan congressional accumulation, surface as a dedicated SMART MONEY analysis card.
+   (b) When shaping the OPPORTUNITIES section: call BOTH tools for EACH candidate ticker before deciding the verdict. Cite specifics: analyst targets, insider action, congressional flow. If nothing notable, still mention the absence ("no expert/insider signal") so Ben knows you checked.
 8. GRADE PAST CALLS ADVERSARIALLY. The PRIOR RECOMMENDATIONS block shows what the previous edition's analyst recommended, plus where the price has moved AND whether the user actually executed (USER DID NOT ACT vs USER ACTED). Your FIRST analysis card must be labeled "THESIS UPDATE" or "PORTFOLIO". For each prior call, before grading, write the strongest case it was WRONG: for every BUY/ADD, what would a bear say? For every HOLD, why should it have been a TRIM? For every SELL/TRIM, was it premature? Then judge which side has the stronger argument given today's data. You have NO EGO invested in prior calls — they are data, not your positions. A different analyst writing tomorrow's edition would happily reverse them; you should have the same freedom. If you find yourself defending a prior call mostly because it was your call, REVERSE it.
 9. YOU ISSUE RECOMMENDATIONS, NOT TRADES. You have no trade-execution permission. The user reads the article and decides independently. Past calls are advice that may or may not have been acted on. NEVER write "we bought", "today's buy executed", "the position was trimmed", "we added", "i bought", "executed cleanly" — those describe trades that did not happen. ALSO BANNED is the subtler form: "the April 30 add at $X is +1.4%" or "today's buy at $Y" — same hallucination, different surface. Reword as "the April 30 recommendation to add" or "the call to add on April 30" or "if Ben had followed the April 30 ADD". The Schwab share counts in the PORTFOLIO block are the AUTHORITATIVE record — read those numbers and use them verbatim. NEVER infer a share count from "old position + recommended add"; the recommended add likely did not happen. The PRIOR RECOMMENDATIONS block tags each call USER DID NOT ACT or USER ACTED — read it and respect it. If a record predates execution-tracking and lacks the tag, default to USER DID NOT ACT.
 10. QUANTIFY EVERY ACTION. Every BUY/ADD/SELL/TRIM action row must include a $ amount, share count, or % of position in the detail. "Add MSFT" is not enough; "Add ~5 shares (~$2,000)" is. Every SELL/TRIM must compute the explicit dollar tax cost at that position's ST/LT rate ("~$X tax at the 30.3% ST rate" or "after-tax $Y").
@@ -1660,7 +2157,29 @@ WORKFLOW:
 3. Build the article via the article tools: set_hero_summary → set_portfolio_thesis → 5-8 add_analysis_card calls (FIRST card grades prior calls + thesis adversarially) → 1-3 add_opportunity calls → one add_position_action per holding+cash (with conviction) → set_market_summary → finalize_article.
 4. Call finalize_article when done. The loop ends there.
 
-INVESTMENT FRAMEWORK: Read PRINCIPLES.md early via read_file('PRINCIPLES.md'). Buffett/Munger/Dalio principles. Greedy when others fearful, fearful when greedy. Never sell on a single signal. Patience is the default — but patience is not paralysis when the data calls for action.
+INVESTMENT FRAMEWORK: Read PRINCIPLES.md early via read_file('PRINCIPLES.md'). Buffett/Munger/Dalio principles. Greedy when others fearful, fearful when greedy. Patience is the default — but patience is not paralysis when the data calls for action.
+
+CORE PHILOSOPHY — how a professional analyst actually decides (baked in from the ISRG-July-2026 lesson):
+
+1. NEVER TRADE ON ONE SIGNAL. RSI oversold alone is not a buy. Analyst downgrade alone is not a sell. Insider sale alone is not conclusive. Real edge comes from CONFLUENCE — 3+ independent signals agreeing. The ISRG trade at RSI 28 lost $2K because we ignored: multi-timeframe DOWNTREND, neutral put/call ratio (no smart-money accumulation), and options market pinning it at low $400s. Any ONE of those checked would have said "wait".
+
+2. TIME HORIZONS MATTER. Look at THREE horizons before every recommendation:
+   • Short (0-14 days): near-term options sentiment + earnings catalyst + technical support/resistance
+   • Mid (14-90 days): analyst target range, options sentiment, trend structure
+   • Long (6mo+): fundamentals trajectory, competitive moat, industry secular trend
+   A stock can be short-term oversold BUT in a long-term downtrend (ISRG). A stock can be long-term uptrend but short-term overbought (IVV at highs — don't chase, but hold). The action changes based on horizon match.
+
+3. SUPPORT AND RESISTANCE ARE REAL. Prices reject at prior swing highs and bounce at prior swing lows because that's where accumulated buyers/sellers sit. Buying near resistance = terrible reward:risk. Buying at validated support = good. Selling into resistance = good. Selling into support = terrible.
+
+4. THE OPTIONS MARKET IS THE PRO POLL. Retail sentiment is on Reddit and CNBC. Professional sentiment is in the options chain. Put/call ratios show who's actually risking capital. IV skew shows where fear premium is priced. Max pain shows where market makers profit. These reveal the smart-money view of the next 2-90 days better than any news article.
+
+5. INSIDERS AND EXPERTS KNOW MORE THAN YOU. Corporate insiders (Form 4) know upcoming earnings, product timing, competitive dynamics. Congressional insiders (STOCK Act) know upcoming legislation and policy. Wall Street analysts know channel-check details and management-team access. Their aggregated behavior — especially when multiple independent parties act on the same conviction — is the highest-signal input available to public-market participants.
+
+6. NEWS SENTIMENT MATTERS BUT LAGS. By the time a story is on CNBC, the smart money has already positioned. Use fetch_news to CONFIRM a thesis, not to GENERATE one. If news is bearish but insiders are buying + options are BULLISH-positioned + fundamentals accelerating, TRUST THE ACTION not the narrative.
+
+7. CONTRADICTIONS ARE INFORMATION. If technicals are bullish but options are bearish → someone is wrong. Sit that trade out or size very small. If insiders are buying but analysts are downgrading → insiders almost always win. If technicals are bearish but fundamentals are accelerating → wait for the trend to catch up.
+
+8. YOUR JOB IS NOT TO PREDICT — IT'S TO SIZE APPROPRIATELY. HIGH conviction = 3+ green signals, position sized to matter. MEDIUM = 2 signals green, half-size or waiting for confirmation. LOW/WATCH = 0-1 signals, no action. Ben's portfolio doesn't need every call to be right; it needs the confidence-weighted expected value to be positive.
 
 TAX MATH (for context, not a rulebook):
 - SHORT-TERM (held < 1 year): 30.3% combined fed+WI rate
