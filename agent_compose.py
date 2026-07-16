@@ -2301,6 +2301,18 @@ def save_chat_context(store: ArticleStore, data: dict, system_prompt: str, issue
     (chat_dir / f"{issue_date}.json").write_text(text)
     (chat_dir / "latest.json").write_text(text)
 
+    # Auto-prune: keep the 30 most recent dated contexts + latest.json.
+    # Chat feature only ever reads latest.json; older files were just cruft
+    # accumulating in the Vercel deploy bundle (which every file inflated).
+    try:
+        dated = sorted(chat_dir.glob("2026-*.json"))  # will need adjusting yearly
+        # Also include future years so we don't quietly drop them
+        dated = sorted(f for f in chat_dir.glob("[0-9][0-9][0-9][0-9]-*.json"))
+        for old in dated[:-30]:
+            old.unlink()
+    except Exception:
+        pass  # cleanup is best-effort; don't fail generation on it
+
 
 def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, str]:
     """Run the agent loop. Returns (store, system_prompt). Store may be empty if
