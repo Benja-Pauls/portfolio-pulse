@@ -39,9 +39,25 @@ import requests
 STOCK_DIR = Path(__file__).parent.parent / "Stock_Portfolio"
 PORTFOLIO_PULSE_DIR = Path(__file__).parent
 
-MODEL = "claude-opus-4-7"
+# Cost-optimized model routing (July 2026):
+#   - RESEARCH_MODEL: fast/cheap turns for tool-use loop (fetch data, analyze).
+#     Haiku 4.5 at $1/MTok input / $5/MTok output — ~15x cheaper than Opus.
+#   - SYNTHESIS_MODEL: high-quality turns for final article synthesis (thesis
+#     update, action rows, adversarial grading). Opus 4.7 stays here because
+#     the analytical framework quality directly drives the P&L.
+# The router in compose_article() picks Opus once the agent starts writing
+# structured article outputs (set_hero_summary onward), Haiku otherwise.
+RESEARCH_MODEL = "claude-haiku-4-5-20251001"
+SYNTHESIS_MODEL = "claude-opus-4-7"
 MAX_TURNS = 30
 MAX_TOKENS_PER_TURN = 8000
+# Article-building tool names — hitting any of these switches the loop to
+# SYNTHESIS_MODEL for the current + all future turns (they carry higher stakes).
+ARTICLE_BUILDER_TOOLS = frozenset({
+    "set_hero_summary", "set_portfolio_thesis", "add_analysis_card",
+    "add_opportunity", "add_position_action", "set_market_summary",
+    "finalize_article",
+})
 
 # CLI commands the agent is allowed to invoke. Anything that mutates state
 # (trade buy/sell, watchlist add, journal log, alerts add, drift set, auth) is
@@ -2329,13 +2345,19 @@ def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, 
     }]
 
     cache_stats = {"reads": 0, "writes": 0}
+    # Model routing: start in RESEARCH (cheap Haiku), promote to SYNTHESIS (Opus)
+    # once the agent hits any article-builder tool. Article synthesis needs the
+    # analytical framework in the prompt to actually route decisions correctly.
+    current_model = RESEARCH_MODEL
+    promoted = False
 
     for turn in range(MAX_TURNS):
         if verbose:
-            print(f"[agent_compose] turn {turn + 1}/{MAX_TURNS}")
+            model_tag = "opus" if current_model == SYNTHESIS_MODEL else "haiku"
+            print(f"[agent_compose] turn {turn + 1}/{MAX_TURNS}  [{model_tag}]")
         try:
             resp = client.messages.create(
-                model=MODEL,
+                model=current_model,
                 max_tokens=MAX_TOKENS_PER_TURN,
                 system=system_cached,
                 tools=tools_cached,
@@ -2359,6 +2381,7 @@ def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, 
 
         # Execute every client-side tool_use block in this turn.
         tool_results: list[dict] = []
+        saw_article_builder = False
         for block in resp.content:
             if getattr(block, "type", None) != "tool_use":
                 continue
@@ -2366,6 +2389,8 @@ def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, 
             # results come back already attached — we just skip them here.
             if block.name == "web_search":
                 continue
+            if block.name in ARTICLE_BUILDER_TOOLS:
+                saw_article_builder = True
             try:
                 result_text = execute_tool(block.name, block.input or {}, store)
             except Exception as e:
@@ -2378,6 +2403,15 @@ def compose_article(data: dict, *, verbose: bool = True) -> tuple[ArticleStore, 
                 "tool_use_id": block.id,
                 "content": result_text,
             })
+
+        # Promote to Opus on the FIRST article-builder call and stay there.
+        # Rationale: once the agent starts writing structured outputs, the
+        # analytical quality of each decision matters more than saving pennies.
+        if saw_article_builder and not promoted:
+            current_model = SYNTHESIS_MODEL
+            promoted = True
+            if verbose:
+                print("[agent_compose] promoted to Opus for article synthesis")
 
         if not tool_results:
             # The model only used server-side tools this turn. Continue so it

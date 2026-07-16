@@ -135,16 +135,40 @@ def render_grading_block(
 
     current_shares = current_shares or {}
 
+    # COST OPTIMIZATION: for each (symbol, type) pair, keep only the most recent
+    # 2 entries and drop HOLD spam entirely from grading. The agent doesn't need
+    # 8 identical "MSFT HOLD MEDIUM" lines from 8 different issues — it needs to
+    # see the last actionable call and current state. This cuts the prompt block
+    # from ~7,000 tokens down to ~1,500 tokens per article.
+    dedupe: dict[tuple[str, str], list[dict]] = {}
+    for rec in sorted(decisions, key=lambda r: r["issue_date"]):  # oldest first
+        key = (rec["symbol"], rec["type"])
+        dedupe.setdefault(key, []).append(rec)
+    # Take last 2 per (sym, type) — enough for the "did this age well" grade
+    kept: list[dict] = []
+    for key, recs in dedupe.items():
+        # Drop HOLD/NO ACTION entirely unless the price moved >5% (agent grades those anyway)
+        if key[1] in ("HOLD", "NO ACTION"):
+            for rec in recs[-1:]:  # only most recent HOLD
+                then_p = rec.get("price_at_call")
+                cur_p = current_prices.get(rec["symbol"])
+                if then_p and cur_p and abs(cur_p / then_p - 1) > 0.05:
+                    kept.append(rec)
+        else:
+            kept.extend(recs[-2:])  # last 2 actionable calls per (sym, type)
+
+    if not kept:
+        return ""
+
     by_date: dict[str, list[dict]] = {}
-    for rec in decisions:
+    for rec in kept:
         by_date.setdefault(rec["issue_date"], []).append(rec)
 
     lines = [
         "",
-        "PRIOR RECOMMENDATIONS (last 7 days — these were ANALYST CALLS, not trades).",
-        "Reconcile each against the Schwab share counts in the PORTFOLIO block.",
-        "Apply ADVERSARIAL grading: write the strongest case the call was WRONG before",
-        "deciding whether to defend or reverse it.",
+        "PRIOR RECOMMENDATIONS (deduped: last 2 actionable calls per ticker + HOLDs where price moved >5%).",
+        "These were ANALYST CALLS, not trades. Reconcile against Schwab share counts.",
+        "Apply ADVERSARIAL grading before defending or reversing.",
     ]
     for issue_date in sorted(by_date.keys()):
         days_ago = (today - datetime.fromisoformat(issue_date).date()).days
