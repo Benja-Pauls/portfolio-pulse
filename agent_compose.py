@@ -1280,6 +1280,142 @@ def _fetch_technical_analysis(symbol: str) -> str:
     vwp = h1y.groupby(bins, observed=True)["Volume"].sum()
     top_vwp = vwp.nlargest(3)
 
+    # ═══ CONSOLIDATION BASE DETECTION ═══
+    # A "base" is a price ZONE where price spent multiple sessions bouncing
+    # between two levels (support + resistance). Detect by:
+    #   1. Sliding window over the last 6mo of daily bars
+    #   2. For each window of N days (10-30), check if all closes fit within
+    #      a range of X% (typical base width is 5-10% of price)
+    #   3. Count how many distinct bars touched the upper/lower edges (tests)
+    #   4. Score strength by (# of tests) + (# of days in base)
+    #   5. Detect breakout status by checking if price exited the range recently
+    #      with a volume confirmation
+    def _detect_bases(close_series, high_series, low_series, vol_series):
+        """Return list of dicts: {start_idx, end_idx, low, high, days, tests_up,
+        tests_down, status, breakout_direction, breakout_date, breakout_volume_ratio}"""
+        bases = []
+        n = len(close_series)
+        if n < 25:
+            return bases
+        # Look at last ~6 months
+        start_scan = max(0, n - 126)
+        current_price = float(close_series.iloc[-1])
+        # Try multiple window widths — bases can be 10 to 40 days
+        window_configs = [(30, 0.08), (20, 0.07), (14, 0.06), (10, 0.05)]
+        # Track windows we've already claimed so we don't double-count overlapping bases
+        claimed_ranges = []
+        for window, max_pct_width in window_configs:
+            for i in range(start_scan, n - window + 1):
+                window_close = close_series.iloc[i:i+window]
+                window_high = high_series.iloc[i:i+window]
+                window_low = low_series.iloc[i:i+window]
+                w_high = float(window_high.max())
+                w_low = float(window_low.min())
+                w_mid = (w_high + w_low) / 2
+                width_pct = (w_high - w_low) / w_mid if w_mid > 0 else 1.0
+                if width_pct > max_pct_width:
+                    continue
+                # Count tests of upper and lower edges (within 2% of edge)
+                edge_tol = (w_high - w_low) * 0.20  # 20% of range width
+                tests_up = int((window_high >= (w_high - edge_tol)).sum())
+                tests_down = int((window_low <= (w_low + edge_tol)).sum())
+                # A base needs at least 2 tests of each edge to be legit
+                if tests_up < 2 or tests_down < 2:
+                    continue
+                # Skip if this range overlaps significantly with an already-claimed one
+                overlaps = False
+                for cs, ce in claimed_ranges:
+                    if not (i > ce or i+window < cs):
+                        overlap_size = min(i+window, ce) - max(i, cs)
+                        if overlap_size > window * 0.5:
+                            overlaps = True
+                            break
+                if overlaps:
+                    continue
+                claimed_ranges.append((i, i+window))
+                # Check if base is still active or broken
+                end_price = float(close_series.iloc[i+window-1])
+                bars_after = n - (i + window)
+                status = "ACTIVE"
+                breakout_dir = None
+                breakout_date = None
+                breakout_vol_ratio = None
+                if bars_after > 0:
+                    later = close_series.iloc[i+window:]
+                    later_vol = vol_series.iloc[i+window:]
+                    avg_vol_in_base = float(vol_series.iloc[i:i+window].mean())
+                    for j, (d, p) in enumerate(later.items()):
+                        p = float(p)
+                        v = float(later_vol.iloc[j])
+                        vol_ratio = v / avg_vol_in_base if avg_vol_in_base > 0 else 1.0
+                        if p > w_high * 1.005:  # 0.5% above upper
+                            status = "BROKEN OUT (up)"
+                            breakout_dir = "up"
+                            breakout_date = d.strftime("%Y-%m-%d")
+                            breakout_vol_ratio = vol_ratio
+                            break
+                        elif p < w_low * 0.995:  # 0.5% below lower
+                            status = "BROKEN DOWN"
+                            breakout_dir = "down"
+                            breakout_date = d.strftime("%Y-%m-%d")
+                            breakout_vol_ratio = vol_ratio
+                            break
+                    else:
+                        # Never broke out — but if we're still inside, mark ACTIVE
+                        if w_low <= current_price <= w_high:
+                            status = "ACTIVE (price currently inside)"
+                        else:
+                            status = "EXPIRED (price drifted out without decisive break)"
+                # Strength scoring
+                total_tests = tests_up + tests_down
+                strength = "STRONG" if (total_tests >= 8 and window >= 20) else (
+                    "MODERATE" if total_tests >= 5 else "WEAK"
+                )
+                bases.append({
+                    "start_date": close_series.index[i].strftime("%Y-%m-%d"),
+                    "end_date": close_series.index[i+window-1].strftime("%Y-%m-%d"),
+                    "low": w_low,
+                    "high": w_high,
+                    "days": window,
+                    "tests_up": tests_up,
+                    "tests_down": tests_down,
+                    "strength": strength,
+                    "status": status,
+                    "breakout_dir": breakout_dir,
+                    "breakout_date": breakout_date,
+                    "breakout_vol_ratio": breakout_vol_ratio,
+                })
+        # Sort most recent first, keep top 4
+        bases.sort(key=lambda b: b["end_date"], reverse=True)
+        return bases[:4]
+
+    detected_bases = _detect_bases(close, high, low, vol)
+
+    # ═══ ROUND-NUMBER PSYCHOLOGICAL LEVELS ═══
+    # Detect $100/$50/$25/$10/$5/$1 increments within ±10% of current price
+    def _round_levels(price):
+        levels = []
+        # Choose granularity based on price magnitude
+        if price >= 500:
+            increments = [100, 50, 25]
+        elif price >= 100:
+            increments = [50, 25, 10]
+        elif price >= 20:
+            increments = [10, 5]
+        else:
+            increments = [5, 1]
+        lo, hi = price * 0.90, price * 1.10
+        seen = set()
+        for inc in increments:
+            start = int((lo // inc) * inc)
+            for lvl in range(start, int(hi) + inc + 1, inc):
+                if lo <= lvl <= hi and lvl not in seen:
+                    seen.add(lvl)
+                    levels.append(lvl)
+        return sorted(levels)
+
+    round_levels = _round_levels(cur)
+
     lines = [
         f"TECHNICAL ANALYSIS — {sym} @ ${cur:.2f}",
         "",
@@ -1315,7 +1451,53 @@ def _fetch_technical_analysis(symbol: str) -> str:
     for interval, v in top_vwp.items():
         lines.append(f"  ~${interval.mid:.2f} range: {int(v):,} shares transacted")
     lines.append("")
-    # Actionable summary
+
+    # ═══ CONSOLIDATION BASES — the base/breakout view ═══
+    lines.append("CONSOLIDATION BASES (zones where price spent 10-30 days trading within a tight range):")
+    if not detected_bases:
+        lines.append("  (no significant bases detected in the last 6 months — stock is trending, not consolidating)")
+    else:
+        for i, b in enumerate(detected_bases, 1):
+            lines.append(
+                f"  Base #{i}: ${b['low']:.2f}–${b['high']:.2f} range "
+                f"({b['start_date']} → {b['end_date']}, {b['days']} days, {b['strength']})"
+            )
+            lines.append(
+                f"    → Tests: {b['tests_up']} of upper edge, {b['tests_down']} of lower edge"
+            )
+            if b['status'].startswith("BROKEN"):
+                vol_note = (
+                    f" on {b['breakout_vol_ratio']:.1f}x base-avg volume" if b['breakout_vol_ratio'] else ""
+                )
+                confirm = "CONFIRMED" if (b['breakout_vol_ratio'] and b['breakout_vol_ratio'] >= 1.5) else "UNCONFIRMED (low volume)"
+                lines.append(f"    → Status: {b['status']} on {b['breakout_date']}{vol_note} [{confirm}]")
+                if b['breakout_dir'] == 'up':
+                    lines.append(f"    → Prior resistance ${b['high']:.2f} is now SUPPORT (watch for retest hold)")
+                else:
+                    lines.append(f"    → Prior support ${b['low']:.2f} is now RESISTANCE (watch for retest reject)")
+            else:
+                lines.append(f"    → Status: {b['status']}")
+                if "ACTIVE" in b['status']:
+                    if abs(cur - b['high']) < abs(cur - b['low']):
+                        lines.append(f"    → Currently NEAR UPPER edge — a break above ${b['high']:.2f} on volume triggers breakout to ~${b['high']*1.08:.2f}")
+                    else:
+                        lines.append(f"    → Currently NEAR LOWER edge — a break below ${b['low']:.2f} on volume triggers breakdown to ~${b['low']*0.92:.2f}")
+    lines.append("")
+
+    # ═══ ROUND-NUMBER PSYCHOLOGICAL LEVELS ═══
+    lines.append("ROUND-NUMBER LEVELS (magnets for retail and algo order flow, ±10% of spot):")
+    if round_levels:
+        for lvl in round_levels:
+            dist = (lvl / cur - 1) * 100
+            direction = "above" if lvl > cur else "below"
+            note = ""
+            # Flag levels within 2% as immediate S/R
+            if abs(dist) < 2.0:
+                note = "  ← ACTIVE psych level (within 2%)"
+            lines.append(f"  ${lvl}  ({dist:+.1f}% {direction}){note}")
+    lines.append("")
+
+    # Actionable summary — combines trend + base state
     if long_trend == "DOWNTREND" and mid_trend == "DOWNTREND" and short_trend == "DOWNTREND":
         lines.append("⚠ SUMMARY: All three timeframes DOWNTREND. RSI oversold does NOT overturn this.")
         lines.append("  A 'buying the dip' thesis needs a specific catalyst — not just an oversold reading.")
@@ -1323,6 +1505,27 @@ def _fetch_technical_analysis(symbol: str) -> str:
         lines.append("✓ SUMMARY: Multi-timeframe uptrend intact. Dips are buyable within the trend.")
     else:
         lines.append("SUMMARY: Mixed timeframes. Position size accordingly and wait for confirmation.")
+
+    # Base-driven actionable guidance
+    active_bases = [b for b in detected_bases if "ACTIVE" in b['status']]
+    recent_breakouts = [b for b in detected_bases if b['breakout_dir'] == 'up' and b['breakout_vol_ratio'] and b['breakout_vol_ratio'] >= 1.5]
+    recent_breakdowns = [b for b in detected_bases if b['breakout_dir'] == 'down' and b['breakout_vol_ratio'] and b['breakout_vol_ratio'] >= 1.5]
+
+    if active_bases:
+        b = active_bases[0]
+        pos_in_range = (cur - b['low']) / (b['high'] - b['low']) * 100 if b['high'] != b['low'] else 50
+        if pos_in_range > 75:
+            lines.append(f"→ BASE CONTEXT: Price near upper edge of ${b['low']:.2f}-${b['high']:.2f} base — reward:risk favors WAITING for confirmed breakout above ${b['high']:.2f} rather than adding here.")
+        elif pos_in_range < 25:
+            lines.append(f"→ BASE CONTEXT: Price near lower edge of ${b['low']:.2f}-${b['high']:.2f} base — good reward:risk for BUY at support IF fundamentals + options support the thesis. Breakdown below ${b['low']:.2f} on volume invalidates.")
+        else:
+            lines.append(f"→ BASE CONTEXT: Price mid-range in ${b['low']:.2f}-${b['high']:.2f} base — no edge; wait for touch of either boundary.")
+    elif recent_breakouts:
+        b = recent_breakouts[0]
+        lines.append(f"→ BREAKOUT CONTEXT: Confirmed breakout above ${b['high']:.2f} on {b['breakout_date']} ({b['breakout_vol_ratio']:.1f}x volume). Prior resistance now support. Trend targets ${b['high']*1.08:.2f}. Add on any retest of ${b['high']:.2f} that holds.")
+    elif recent_breakdowns:
+        b = recent_breakdowns[0]
+        lines.append(f"→ BREAKDOWN CONTEXT: Confirmed breakdown below ${b['low']:.2f} on {b['breakout_date']} ({b['breakout_vol_ratio']:.1f}x volume). Prior support now resistance. Downside target ${b['low']*0.92:.2f}. Do NOT buy the dip until price reclaims ${b['low']:.2f}.")
 
     return "\n".join(lines)
 
@@ -2166,6 +2369,19 @@ ABSOLUTE RULES:
 14. SELF-CONSISTENCY. Before calling finalize_article, re-read your cards and action rows. If two cards make contradictory claims (e.g., "rotate to defensives" + "lean into AI capex"), revise. The edition must be internally coherent.
 15. DEVIL'S ADVOCATE ON HIGH CONVICTION. Every HIGH-conviction action row must end with one short sentence on what would invalidate the call. Format: "Invalidated if: [specific observable]". Examples: "Invalidated if MSFT closes below $385 on volume" / "Invalidated if Q2 Azure growth comes in below 35%". Forces falsifiability — if you can't write the invalidation condition, the conviction isn't HIGH.
 16. WRITE FOR MOBILE FIRST. Ben reads this on his phone in 5 minutes. Lead with the answer, then the reasoning. Each card body: 2-4 punchy sentences max, then the action. Action-row details: under 280 characters when possible. Numbers > adjectives. The first 2 cards must be the most important: (1) THESIS UPDATE grading prior calls + thesis adversarially, (2) the highest-impact decision today (post-earnings reaction, biggest position alert, or the cash deployment).
+17. IDENTIFY BASES + BREAKOUTS. fetch_technical_analysis now returns a CONSOLIDATION BASES section — actual price zones where the stock spent 10-30 days trading within a tight range, with tests count + strength + breakout status + volume confirmation. Use it:
+    • BUY only at established support of a strong base (STRONG rating, 3+ tests of lower edge)
+    • BUY on CONFIRMED BREAKOUT above the base (close above upper + volume ≥1.5x base-avg) — cite the specific level and confirmation
+    • SELL/TRIM into resistance of an active base (STRONG rating, 3+ tests of upper) — that's where sellers historically won
+    • SELL/TRIM on CONFIRMED BREAKDOWN below the base
+    • AVOID chasing MID-RANGE within a base — reward:risk is terrible
+    • For every action row, cite the specific base range and its status ("acting at the top of the $492-$504 range with 5 upper-edge tests" > "MSFT looks toppy")
+18. OPTIONS DIVERGENCE AT S/R = HIGH-EDGE SIGNAL. When price is at a base edge, cross-check with fetch_options_sentiment:
+    • Price at RESISTANCE + options P/C BULLISH on mid+long → breakout LIKELY. Do NOT sell into resistance in this setup. HOLD or ADD on breakout confirmation.
+    • Price at RESISTANCE + options P/C BEARISH on mid+long → rejection LIKELY. Trim or set stop.
+    • Price at SUPPORT + options P/C BULLISH → bounce LIKELY. Good BUY entry.
+    • Price at SUPPORT + options P/C BEARISH → breakdown LIKELY. Do NOT buy the dip.
+    This is how the MSFT July 2026 hold-through-earnings decision worked — price at $384-$400 support + P/C 0.31 mid-term (deeply bullish) = high-edge HOLD. Same framework caught the ISRG exit: price at $380 support + P/C 1.17 mid-term (bearish) = trap, not a bottom.
 
 WORKFLOW:
 1. Skim the data block below — including PRIOR RECOMMENDATIONS, PRIOR PORTFOLIO THESIS (if present), recent + UPCOMING earnings.
